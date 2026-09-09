@@ -1,13 +1,14 @@
 {
   "book_id": "69842353",
-  "book_title": "Разработка Androidприложений с нуля",
+  "book_title": "Разработка Android-приложений с нуля",
+  "book_author": "Джон Хортон",
   "file_id": "101824966",
   "total_pages": 10,
-  "downloaded_pages": 10,
-  "start_page": 32,
-  "end_page": 41,
-  "last_page": 41,
+  "downloaded_pages": 5,
+  "start_page": 30,
+  "end_page": 39,
+  "last_page": 34,
   "failed_pages": [],
   "status": "in_progress",
-  "last_update": "2026-09-09T12:16:36.673Z"
+  "last_update": "2026-09-09T12:54:12.695Z"
 }
