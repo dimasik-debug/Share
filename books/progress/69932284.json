@@ -4,13 +4,13 @@
   "book_author": "Дон Гриффитс",
   "file_id": "102123904",
   "total_pages": 912,
-  "downloaded_pages": 540,
+  "downloaded_pages": 545,
   "start_page": 1,
   "end_page": 912,
-  "last_page": 540,
+  "last_page": 545,
   "failed_pages": [
     130
   ],
   "status": "in_progress",
-  "last_update": "2026-09-09T20:21:09.622Z"
+  "last_update": "2026-09-09T20:23:08.822Z"
 }
