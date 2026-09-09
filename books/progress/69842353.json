@@ -2,12 +2,12 @@
   "book_id": "69842353",
   "book_title": "Разработка Androidприложений с нуля",
   "file_id": "101824966",
-  "total_pages": 576,
-  "downloaded_pages": 1,
+  "total_pages": 10,
+  "downloaded_pages": 5,
   "start_page": 1,
-  "end_page": 576,
-  "last_page": 1,
+  "end_page": 10,
+  "last_page": 5,
   "failed_pages": [],
-  "status": "stopped",
-  "last_update": "2026-09-09T09:24:17.202Z"
+  "status": "in_progress",
+  "last_update": "2026-09-09T09:53:36.278Z"
 }
