@@ -4,15 +4,15 @@
   "book_author": "Джон Хортон",
   "file_id": "121275835",
   "total_pages": 528,
-  "downloaded_pages": 380,
+  "downloaded_pages": 385,
   "start_page": 1,
   "end_page": 528,
-  "last_page": 380,
+  "last_page": 385,
   "failed_pages": [
     239,
     239,
     239
   ],
   "status": "in_progress",
-  "last_update": "2026-09-09T19:04:03.343Z"
+  "last_update": "2026-09-09T19:05:12.724Z"
 }
