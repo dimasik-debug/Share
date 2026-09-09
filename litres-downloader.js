@@ -1,27 +1,27 @@
-(function fullDownloaderWithRangeInName() {
-    console.log('🚀 Запускаем загрузчик с именем файла + диапазон...');
-    
+(function fullDownloaderWithPreview() {
+    console.log('🚀 Запускаем загрузчик с предпросмотром...');
+
     // --- 1. Подключаем JSZip ---
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
     document.head.appendChild(script);
-    
+
     let JSZipLoaded = false;
     script.onload = () => {
         JSZipLoaded = true;
         console.log('✅ JSZip загружен!');
     };
-    
+
     // --- 2. Получаем параметры книги ---
     const urlParams = new URLSearchParams(window.location.search);
     const fileId = urlParams.get('file');
     const artId = urlParams.get('art');
-    
+
     if (!fileId || !artId) {
         alert('❌ Не удалось определить ID книги!');
         return;
     }
-    
+
     // --- 3. Функции для работы с сессией ---
     function getCookie(name) {
         const value = `; ${document.cookie}`;
@@ -29,12 +29,12 @@
         if (parts.length === 2) return parts.pop().split(';').shift();
         return null;
     }
-    
+
     let sessionData = {
         sessionId: getCookie('SID') || '6r2aa62j7bd50vfj3yb9ev6kcac54s9f',
         supersid: getCookie('supersid') || '467510eb-3fb3-448e-9b9c-b3e89203d48b'
     };
-    
+
     function getHeaders() {
         return {
             'accept': '*/*',
@@ -46,8 +46,22 @@
             'ui-language-code': 'ru'
         };
     }
-    
-    // --- 4. Создаём UI ---
+
+    // --- 4. Определяем книгу ДО старта ---
+    let bookTitle = urlParams.get('title') || document.title || 'book';
+    bookTitle = bookTitle.replace(/[^a-zA-Zа-яА-Я0-9 ]/g, '').trim().slice(0, 50) || 'book';
+
+    let totalPages = 570;
+    const pagerMax = document.getElementById('pager-max');
+    if (pagerMax) {
+        totalPages = parseInt(pagerMax.innerText) || 570;
+    }
+
+    // Диапазон по умолчанию (будет показан в интерфейсе)
+    let defaultStart = 1;
+    let defaultEnd = Math.min(10, totalPages);
+
+    // --- 5. Создаём UI с предпросмотром ---
     const uiHTML = `
         <div id="litres_downloader_ui" style="
             position: fixed;
@@ -80,7 +94,7 @@
                         📚 LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: 10px; color: #6a8aaa; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600;">
-                        📖 Имя файла + диапазон страниц
+                        📖 Предпросмотр + диапазон
                     </div>
                 </div>
                 <button id="close_ui" style="
@@ -94,7 +108,27 @@
                     border-radius: 8px;
                 ">✕</button>
             </div>
-            
+
+            <!-- ИНФОРМАЦИЯ О КНИГЕ (ПРЕДПРОСМОТР) -->
+            <div style="
+                background: #f0f7ff;
+                border-radius: 12px;
+                padding: 12px 16px;
+                margin-bottom: 14px;
+                border-left: 4px solid #1a5a9a;
+            ">
+                <div style="font-weight: 700; font-size: 14px; color: #1a2a4a; margin-bottom: 4px;">
+                    📖 <span id="preview_book_title">${bookTitle}</span>
+                </div>
+                <div style="font-size: 12px; color: #4a6a8a;">
+                    📄 Всего страниц: <span id="preview_total_pages">${totalPages}</span>
+                    &nbsp;|&nbsp; 📥 Диапазон: <span id="preview_range">${defaultStart} - ${defaultEnd}</span>
+                </div>
+                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
+                    📦 Имя файла: <span id="preview_filename" style="font-weight: 600; color: #1a5a9a;">${bookTitle}(${defaultStart}-${defaultEnd}).zip</span>
+                </div>
+            </div>
+
             <!-- Статус чтения -->
             <div style="
                 background: #f0f4fa;
@@ -121,7 +155,7 @@
                         font-size: 14px;
                         color: #1a2a4a;
                     ">
-                        📖 Читаем страницу...
+                        📖 Готов к чтению
                     </div>
                     <div id="reading_progress_text" style="
                         font-size: 12px;
@@ -137,14 +171,14 @@
                     min-width: 50px;
                     text-align: right;
                 ">
-                    0/0
+                    0/${defaultEnd - defaultStart + 1}
                 </div>
             </div>
-            
+
             <!-- Прогресс -->
             <div style="margin-bottom: 14px;">
                 <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a6a8a; margin-bottom: 6px;">
-                    <span id="progress_text">📥 Страниц: 0 из 0</span>
+                    <span id="progress_text">📥 Страниц: 0 из ${defaultEnd - defaultStart + 1}</span>
                     <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
                 </div>
                 <div style="
@@ -163,7 +197,7 @@
                     "></div>
                 </div>
             </div>
-            
+
             <!-- Кнопки -->
             <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
                 <button id="btn_start" style="
@@ -180,7 +214,7 @@
                     min-width: 70px;
                     box-shadow: 0 4px 12px rgba(26, 58, 106, 0.2);
                 ">▶ Старт</button>
-                
+
                 <button id="btn_pause" style="
                     flex: 1;
                     padding: 10px 12px;
@@ -194,7 +228,7 @@
                     transition: all 0.2s;
                     min-width: 70px;
                 ">⏸ Пауза</button>
-                
+
                 <button id="btn_stop" style="
                     flex: 1;
                     padding: 10px 12px;
@@ -209,7 +243,7 @@
                     min-width: 70px;
                 ">⏹ Стоп</button>
             </div>
-            
+
             <!-- Имя файла -->
             <div style="
                 background: #f8fafc;
@@ -221,9 +255,9 @@
                 text-align: center;
                 border: 1px dashed #dce2e8;
             ">
-                📄 Имя файла: <span id="file_name_display" style="font-weight: 600; color: #1a5a9a;">...</span>
+                📄 Имя файла: <span id="file_name_display" style="font-weight: 600; color: #1a5a9a;">${bookTitle}(${defaultStart}-${defaultEnd}).zip</span>
             </div>
-            
+
             <!-- Статус -->
             <div id="status_text" style="
                 font-size: 12px;
@@ -235,7 +269,7 @@
             ">
                 ⏳ Готов к чтению
             </div>
-            
+
             <!-- ZIP информация -->
             <div id="zip_info" style="
                 font-size: 11px;
@@ -248,10 +282,10 @@
             </div>
         </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', uiHTML);
-    
-    // --- 5. Получаем элементы ---
+
+    // --- 6. Получаем элементы ---
     const ui = document.getElementById('litres_downloader_ui');
     const closeBtn = document.getElementById('close_ui');
     const btnStart = document.getElementById('btn_start');
@@ -267,25 +301,32 @@
     const readingProgressText = document.getElementById('reading_progress_text');
     const pageCounter = document.getElementById('page_counter');
     const fileNameDisplay = document.getElementById('file_name_display');
-    
-    // --- 6. Состояние ---
+
+    // Элементы предпросмотра
+    const previewBookTitle = document.getElementById('preview_book_title');
+    const previewTotalPages = document.getElementById('preview_total_pages');
+    const previewRange = document.getElementById('preview_range');
+    const previewFilename = document.getElementById('preview_filename');
+
+    // --- 7. Состояние ---
     let state = {
         isRunning: false,
         isPaused: false,
         isStopped: false,
         downloaded: 0,
         total: 0,
-        startPage: 1,
-        endPage: 10,
-        bookTitle: '',
+        startPage: defaultStart,
+        endPage: defaultEnd,
+        bookTitle: bookTitle,
+        totalPages: totalPages,
         errors: 0,
         zip: null,
         isZipping: false,
         currentPageReading: 0,
-        fileName: ''
+        fileName: `${bookTitle}(${defaultStart}-${defaultEnd})`
     };
-    
-    // --- 7. Функции анимации ---
+
+    // --- 8. Функции анимации ---
     function animateHand(action) {
         if (action === 'turn') {
             handAnimation.style.transform = 'translateX(30px) rotate(20deg)';
@@ -310,27 +351,27 @@
             }, 1000);
         }
     }
-    
+
     function updateReadingProgress(pageNum, total) {
         const percent = total > 0 ? Math.round((pageNum / total) * 100) : 0;
         readingProgressText.textContent = `Прогресс: ${percent}%`;
         pageCounter.textContent = `${pageNum}/${total}`;
     }
-    
+
     function setReadingStatus(text) {
         readingStatus.textContent = text;
     }
-    
+
     function updateFileNameDisplay() {
         if (state.bookTitle && state.startPage && state.endPage) {
             state.fileName = `${state.bookTitle}(${state.startPage}-${state.endPage})`;
             fileNameDisplay.textContent = state.fileName + '.zip';
-        } else {
-            fileNameDisplay.textContent = '...';
+            previewFilename.textContent = state.fileName + '.zip';
+            previewRange.textContent = `${state.startPage} - ${state.endPage}`;
         }
     }
-    
-    // --- 8. Функции UI ---
+
+    // --- 9. Функции UI ---
     function updateProgress() {
         const percent = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
         progressBar.style.width = `${Math.min(percent, 100)}%`;
@@ -339,12 +380,12 @@
         updateReadingProgress(state.downloaded, state.total);
         updateFileNameDisplay();
     }
-    
+
     function setStatus(text, isError = false) {
         statusText.textContent = text;
         statusText.style.color = isError ? '#e74c3c' : '#6a8aaa';
     }
-    
+
     function updateButtons() {
         if (state.isRunning && !state.isPaused) {
             btnStart.disabled = true;
@@ -352,13 +393,13 @@
             btnStart.style.background = '#b0c4d8';
             btnStart.style.color = '#8a9aaa';
             btnStart.style.boxShadow = 'none';
-            
+
             btnPause.disabled = false;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#f0a500';
             btnPause.style.color = '#ffffff';
             btnPause.style.boxShadow = '0 4px 12px rgba(240, 165, 0, 0.25)';
-            
+
             btnStop.disabled = false;
             btnStop.textContent = '⏹ Стоп';
             btnStop.style.background = '#fce4e4';
@@ -371,13 +412,13 @@
             btnStart.style.background = '#1a3a6a';
             btnStart.style.color = '#ffffff';
             btnStart.style.boxShadow = '0 4px 12px rgba(26, 58, 106, 0.2)';
-            
+
             btnPause.disabled = true;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
             btnPause.style.color = '#8a9aaa';
             btnPause.style.boxShadow = 'none';
-            
+
             btnStop.disabled = false;
             btnStop.textContent = '⏹ Стоп';
             btnStop.style.background = '#fce4e4';
@@ -390,13 +431,13 @@
             btnStart.style.background = '#1a3a6a';
             btnStart.style.color = '#ffffff';
             btnStart.style.boxShadow = '0 4px 12px rgba(26, 58, 106, 0.2)';
-            
+
             btnPause.disabled = true;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
             btnPause.style.color = '#8a9aaa';
             btnPause.style.boxShadow = 'none';
-            
+
             btnStop.disabled = true;
             btnStop.textContent = '⏹ Стоп';
             btnStop.style.background = '#f0f2f4';
@@ -405,8 +446,8 @@
             btnStop.style.boxShadow = 'none';
         }
     }
-    
-    // --- 9. Реалистичные задержки ---
+
+    // --- 10. Реалистичные задержки ---
     function getReadingDelay() {
         const baseDelay = Math.random() * 15000 + 5000;
         if (Math.random() < 0.15) {
@@ -420,7 +461,7 @@
         }
         return baseDelay;
     }
-    
+
     function getRandomPause() {
         if (Math.random() < 0.2) {
             return Math.random() * 10000 + 5000;
@@ -430,30 +471,18 @@
         }
         return Math.random() * 3000 + 1000;
     }
-    
-    // --- 10. Скачивание и добавление в ZIP ---
+
+    // --- 11. Скачивание и добавление в ZIP ---
     async function downloadAndAddToZip(pageNum) {
         try {
             const apiPage = pageNum - 1;
             const ext = apiPage === 0 ? 'jpg' : 'gif';
-            
-            setReadingStatus(`📖 Читаем стр. ${pageNum}...`);
-            animateHand('wait');
-            
-            const readDelay = getReadingDelay();
-            const minutes = Math.floor(readDelay / 60000);
-            const seconds = Math.floor((readDelay % 60000) / 1000);
-            const timeStr = minutes > 0 ? `${minutes}м ${seconds}с` : `${seconds}с`;
-            
-            setStatus(`📖 Читаем стр. ${pageNum} (${timeStr})`);
-            
-            await new Promise(resolve => setTimeout(resolve, readDelay));
-            
+
             setReadingStatus(`🔄 Перелистываем стр. ${pageNum}...`);
             animateHand('turn');
-            
+
             await new Promise(resolve => setTimeout(resolve, 800));
-            
+
             const linkResp = await fetch(
                 `https://api.litres.ru/foundation/api/arts/files/${fileId}/link?page_id=${apiPage}&is_trial=false&resolution=w1900&image_type=${ext}`,
                 {
@@ -462,52 +491,63 @@
                     headers: getHeaders()
                 }
             );
-            
+
             if (linkResp.status === 401) {
                 setStatus(`⚠️ Ошибка 401! Обновите сессию.`, true);
                 state.errors++;
                 return false;
             }
-            
+
             if (!linkResp.ok) {
                 setStatus(`⚠️ Ошибка ${linkResp.status}`, true);
                 state.errors++;
                 return false;
             }
-            
+
             const linkData = await linkResp.json();
             const imageUrl = linkData?.payload?.data?.link || 
                             linkData?.payload?.link || 
                             linkData?.data?.link ||
                             linkData?.link;
-            
+
             if (!imageUrl) {
                 setStatus(`⚠️ Нет ссылки для стр. ${pageNum}`, true);
                 state.errors++;
                 return false;
             }
-            
+
             const imgResp = await fetch(imageUrl, { credentials: 'omit' });
             if (!imgResp.ok) {
                 setStatus(`⚠️ Ошибка загрузки стр. ${pageNum}`, true);
                 state.errors++;
                 return false;
             }
-            
+
             const blob = await imgResp.blob();
             const fileName = `${String(pageNum).padStart(3, '0')}.${ext}`;
-            
+
             if (state.zip) {
                 state.zip.file(fileName, blob);
                 zipInfo.style.display = 'block';
                 zipInfo.textContent = `📦 Добавлена стр. ${pageNum} (${Math.round(blob.size / 1024)} KB)`;
                 zipInfo.style.color = '#1a5a9a';
             }
-            
+
             state.downloaded++;
             state.errors = 0;
             updateProgress();
-            
+
+            const readDelay = getReadingDelay();
+            const minutes = Math.floor(readDelay / 60000);
+            const seconds = Math.floor((readDelay % 60000) / 1000);
+            const timeStr = minutes > 0 ? `${minutes}м ${seconds}с` : `${seconds}с`;
+
+            setReadingStatus(`📖 Читаем стр. ${pageNum} (${timeStr})`);
+            animateHand('wait');
+            setStatus(`📖 Читаем стр. ${pageNum} (${timeStr})`);
+
+            await new Promise(resolve => setTimeout(resolve, readDelay));
+
             const pauseDelay = getRandomPause();
             if (pauseDelay > 5000) {
                 setStatus(`☕ Пауза ${Math.round(pauseDelay/1000)}с...`);
@@ -515,36 +555,35 @@
                 animateHand('wait');
                 await new Promise(resolve => setTimeout(resolve, pauseDelay));
             }
-            
+
             setReadingStatus(`✅ Стр. ${pageNum} прочитана`);
             setStatus(`✅ Стр. ${pageNum} → архив`);
-            
+
             return true;
-            
+
         } catch(e) {
             setStatus(`❌ Ошибка: ${e.message}`, true);
             state.errors++;
             return false;
         }
     }
-    
-    // --- 11. Сборка и скачивание ZIP с именем + диапазон ---
+
+    // --- 12. Сборка и скачивание ZIP ---
     async function finalizeZip() {
         if (!state.zip) return;
-        
+
         setStatus('📦 Формируем ZIP-архив...');
         setReadingStatus('📦 Архивируем книгу...');
         zipInfo.textContent = '📦 Архивирование...';
         zipInfo.style.color = '#f0a500';
-        
+
         try {
             const zipBlob = await state.zip.generateAsync({ 
                 type: 'blob',
                 compression: 'DEFLATE',
                 compressionOptions: { level: 6 }
             });
-            
-            // Имя файла: Название книги(диапазон).zip
+
             const fileName = `${state.bookTitle}(${state.startPage}-${state.endPage}).zip`;
             const link = document.createElement('a');
             link.href = URL.createObjectURL(zipBlob);
@@ -552,22 +591,21 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
+
             setStatus(`🎉 Скачано: ${fileName} (${state.downloaded} стр.)`);
             setReadingStatus('🎉 Чтение завершено!');
             zipInfo.textContent = `✅ ZIP: ${Math.round(zipBlob.size / 1024 / 1024)} MB`;
             zipInfo.style.color = '#1a5a9a';
-            
-            // Обновляем отображение имени файла
+
             state.fileName = fileName;
             updateFileNameDisplay();
-            
+
         } catch(e) {
             setStatus(`❌ Ошибка создания ZIP: ${e.message}`, true);
         }
     }
-    
-    // --- 12. Основной цикл ---
+
+    // --- 13. Основной цикл ---
     async function downloadLoop() {
         if (state.isStopped || state.downloaded >= state.total) {
             if (state.downloaded >= state.total && state.zip) {
@@ -577,13 +615,13 @@
             }
             return;
         }
-        
+
         if (state.isPaused) {
             setStatus('⏸ На паузе');
             setReadingStatus('⏸ Пауза...');
             return;
         }
-        
+
         const pageNum = state.startPage + state.downloaded;
         if (pageNum > state.endPage) {
             await finalizeZip();
@@ -591,16 +629,16 @@
             updateButtons();
             return;
         }
-        
+
         const success = await downloadAndAddToZip(pageNum);
-        
+
         if (!success && state.errors >= 3) {
             setStatus(`❌ Слишком много ошибок (${state.errors}). Остановлено.`, true);
             state.isRunning = false;
             updateButtons();
             return;
         }
-        
+
         const shortPause = Math.random() * 1500 + 500;
         state.autoInterval = setTimeout(() => {
             if (!state.isStopped && !state.isPaused && state.isRunning) {
@@ -608,8 +646,8 @@
             }
         }, shortPause);
     }
-    
-    // --- 13. Запуск ---
+
+    // --- 14. Запуск ---
     async function startDownload() {
         if (state.isRunning && state.isPaused) {
             state.isPaused = false;
@@ -619,9 +657,9 @@
             downloadLoop();
             return;
         }
-        
+
         if (state.isRunning) return;
-        
+
         if (!JSZipLoaded) {
             setStatus('⏳ Загрузка JSZip...', true);
             await new Promise(resolve => {
@@ -633,23 +671,15 @@
                 }, 200);
             });
         }
-        
-        state.bookTitle = urlParams.get('title') || document.title || 'book';
-        state.bookTitle = state.bookTitle.replace(/[^a-zA-Zа-яА-Я0-9 ]/g, '').trim().slice(0, 50) || 'book';
-        
-        let totalPages = 570;
-        const pagerMax = document.getElementById('pager-max');
-        if (pagerMax) {
-            totalPages = parseInt(pagerMax.innerText) || 570;
-        }
-        
-        const start = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${totalPages} стр.\n\nС какой страницы начать чтение?`, '1')) || 1;
+
+        // Запрашиваем диапазон у пользователя
+        const start = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${state.totalPages} стр.\n\nС какой страницы начать чтение?`, state.startPage)) || state.startPage;
         if (start < 1) { setStatus('❌ Неверный номер!', true); return; }
-        
-        const end = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${totalPages} стр.\nНачинаем с: ${start}\n\nПо какую страницу читать?`, `${Math.min(start + 9, totalPages)}`)) || Math.min(start + 9, totalPages);
+
+        const end = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${state.totalPages} стр.\nНачинаем с: ${start}\n\nПо какую страницу читать?`, state.endPage)) || state.endPage;
         if (end < start) { setStatus('❌ Конечная страница меньше начальной!', true); return; }
-        if (end > totalPages) { setStatus(`⚠️ Максимум ${totalPages} страниц.`, true); return; }
-        
+        if (end > state.totalPages) { setStatus(`⚠️ Максимум ${state.totalPages} страниц.`, true); return; }
+
         state.startPage = start;
         state.endPage = end;
         state.total = end - start + 1;
@@ -659,25 +689,24 @@
         state.isPaused = false;
         state.isStopped = false;
         state.zip = new JSZip();
-        
-        // Обновляем имя файла
+
         state.fileName = `${state.bookTitle}(${start}-${end})`;
         updateFileNameDisplay();
-        
+
         zipInfo.style.display = 'block';
         zipInfo.textContent = `📦 Архив: ${state.fileName}.zip (${state.total} стр.)`;
         zipInfo.style.color = '#1a5a9a';
-        
+
         updateProgress();
         setStatus(`🚀 Начинаем чтение ${start}-${end}...`);
         setReadingStatus('📖 Открываем книгу...');
         animateHand('hover');
         updateButtons();
-        
+
         setTimeout(downloadLoop, 2000);
     }
-    
-    // --- 14. Управление ---
+
+    // --- 15. Управление ---
     function stopDownload() {
         state.isStopped = true;
         state.isRunning = false;
@@ -690,7 +719,7 @@
         setReadingStatus('⏹ Чтение прервано');
         updateButtons();
     }
-    
+
     function pauseDownload() {
         if (state.isRunning && !state.isPaused) {
             state.isPaused = true;
@@ -704,8 +733,8 @@
             updateButtons();
         }
     }
-    
-    // --- 15. Обработчики ---
+
+    // --- 16. Обработчики ---
     btnStart.addEventListener('click', startDownload);
     btnPause.addEventListener('click', pauseDownload);
     btnStop.addEventListener('click', stopDownload);
@@ -714,8 +743,8 @@
         stopDownload();
         ui.style.display = 'none';
     });
-    
-    // --- 16. Экспорт ---
+
+    // --- 17. Экспорт ---
     window.downloaderUI = {
         start: startDownload,
         pause: pauseDownload,
@@ -727,10 +756,11 @@
             setStatus('✅ Сессия обновлена');
         }
     };
-    
+
+    // --- 18. Инициализация ---
     updateButtons();
     setStatus('📖 Готов к чтению. Нажмите "Старт"');
     setReadingStatus('📚 Выберите диапазон страниц');
     updateFileNameDisplay();
-    console.log('✅ UI с именем файла + диапазон создан!');
+    console.log('✅ UI с предпросмотром создан!');
 })();
