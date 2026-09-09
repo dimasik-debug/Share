@@ -938,4 +938,227 @@
             state.errors++;
             
             if (state.errors >= state.maxErrors) {
-                showError
+                showError(`⚠️ Слишком много ошибок (${state.errors}). Сохраняем частичный архив...`);
+                await saveProgress();
+                state.isRunning = false;
+                updateButtons();
+                return;
+            }
+            
+            if (state.consecutiveErrors >= 3) {
+                showError(`📌 3 ошибки подряд! Вероятно, книга закончилась. Сохраняем частичный архив...`);
+                await saveProgress();
+                state.isRunning = false;
+                updateButtons();
+                return;
+            }
+        }
+
+        updateProgress();
+
+        const delay = Math.random() * 3000 + 1500;
+        state.autoInterval = setTimeout(() => {
+            if (!state.isStopped && !state.isPaused && state.isRunning) {
+                downloadLoop();
+            }
+        }, delay);
+    }
+
+    // ============================================================
+    // 11. ЗАПУСК
+    // ============================================================
+
+    async function startDownload() {
+        if (state.isRunning && state.isPaused) {
+            state.isPaused = false;
+            setStatus('▶ Продолжаем...');
+            updateButtons();
+            downloadLoop();
+            return;
+        }
+
+        if (state.isRunning) return;
+
+        if (!JSZipLoaded) {
+            setStatus('⏳ Загрузка JSZip...', true);
+            await new Promise(resolve => {
+                const check = setInterval(() => {
+                    if (JSZipLoaded) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 200);
+            });
+        }
+
+        // Проверяем сохранённый прогресс
+        const hasProgress = await checkForSavedProgress();
+        if (hasProgress) return;
+
+        // Проверка сессии
+        if (!sessionData.sessionId) {
+            showError('⚠️ Не найден session-id. Обновите страницу (F5)!');
+            addLog('💡 Нужно обновить страницу (F5) и запустить скрипт заново', true);
+            return;
+        }
+
+        addLog(`🔑 session-id: ${sessionData.sessionId.substring(0, 10)}...`);
+
+        const start = parseInt(prompt(
+            `📖 Книга: "${state.bookTitle}"\n` +
+            `📄 Всего страниц: ${state.totalPages}\n\n` +
+            `С какой страницы начать? (1-${state.totalPages})`,
+            state.startPage
+        )) || state.startPage;
+
+        if (start < 1 || start > state.totalPages) {
+            showError(`❌ Страница должна быть от 1 до ${state.totalPages}`);
+            return;
+        }
+
+        const end = parseInt(prompt(
+            `📖 Книга: "${state.bookTitle}"\n` +
+            `📄 Всего страниц: ${state.totalPages}\n` +
+            `Начинаем с: ${start}\n\n` +
+            `По какую страницу читать? (${start}-${state.totalPages})`,
+            state.endPage
+        )) || state.endPage;
+
+        if (end < start || end > state.totalPages) {
+            showError(`❌ Диапазон должен быть от ${start} до ${state.totalPages}`);
+            return;
+        }
+
+        state.startPage = start;
+        state.endPage = end;
+        state.total = end - start + 1;
+        state.downloaded = 0;
+        state.errors = 0;
+        state.consecutiveErrors = 0;
+        state.failedPages = [];
+        state.isRunning = true;
+        state.isPaused = false;
+        state.isStopped = false;
+        state.zip = new JSZip();
+        state.progressSaved = false;
+        state.lastSaveTime = 0;
+
+        updateFileNameDisplay();
+        updateProgress();
+        setStatus(`🚀 Загружаем ${start}-${end}...`);
+        setReadingStatus('📖 Начинаем...');
+        animateHand('hover');
+        updateButtons();
+        addLog(`🚀 Запуск: ${start}-${end} (${state.total} стр.)`);
+
+        setTimeout(downloadLoop, 1000);
+    }
+
+    // ============================================================
+    // 12. УПРАВЛЕНИЕ
+    // ============================================================
+
+    function stopDownload() {
+        state.isStopped = true;
+        state.isRunning = false;
+        state.isPaused = false;
+        if (state.autoInterval) {
+            clearTimeout(state.autoInterval);
+            state.autoInterval = null;
+        }
+        setStatus(`⏹ Остановлено. Скачано: ${state.downloaded} стр.`);
+        setReadingStatus('⏹ Остановлено');
+        addLog(`⏹ Остановлено. Скачано: ${state.downloaded} стр.`);
+        
+        if (state.downloaded > 0 && state.downloaded < state.total) {
+            saveProgress();
+        }
+        
+        updateButtons();
+    }
+
+    function pauseDownload() {
+        if (state.isRunning && !state.isPaused) {
+            state.isPaused = true;
+            if (state.autoInterval) {
+                clearTimeout(state.autoInterval);
+                state.autoInterval = null;
+            }
+            setStatus('⏸ Пауза');
+            setReadingStatus('⏸ Пауза...');
+            animateHand('wait');
+            updateButtons();
+            addLog('⏸ Пауза');
+            
+            saveProgress();
+        }
+    }
+
+    function setupGitHub() {
+        if (askForGitHubToken()) {
+            addLog('✅ GitHub токен сохранён');
+            githubStatus.textContent = '✅ готов';
+            checkForSavedProgress();
+        } else {
+            addLog('⚠️ GitHub токен не указан', true);
+            githubStatus.textContent = '⚠️ нет токена';
+        }
+    }
+
+    // ============================================================
+    // 13. ОБРАБОТЧИКИ
+    // ============================================================
+
+    btnStart.addEventListener('click', startDownload);
+    btnPause.addEventListener('click', pauseDownload);
+    btnStop.addEventListener('click', stopDownload);
+    btnGitHub.addEventListener('click', setupGitHub);
+    
+    closeBtn.addEventListener('click', () => {
+        if (state.isRunning && !confirm('Загрузка ещё идёт. Закрыть?')) return;
+        stopDownload();
+        ui.style.display = 'none';
+    });
+
+    // ============================================================
+    // 14. ЭКСПОРТ
+    // ============================================================
+
+    window.downloaderUI = {
+        start: startDownload,
+        pause: pauseDownload,
+        stop: stopDownload,
+        state: state,
+        addLog: addLog,
+        saveProgress: saveProgress,
+        loadProgress: loadProgress,
+        setupGitHub: setupGitHub,
+        updateSession: (sid, ssid) => {
+            if (sid) sessionData.sessionId = sid;
+            if (ssid) sessionData.supersid = ssid;
+            addLog('✅ Сессия обновлена');
+            setStatus('✅ Сессия обновлена');
+        }
+    };
+
+    // ============================================================
+    // 15. ИНИЦИАЛИЗАЦИЯ
+    // ============================================================
+
+    updateButtons();
+    setStatus(`📖 Готов (${totalPages} стр.)`);
+    setReadingStatus('📚 Настройте GitHub для сохранения');
+    updateFileNameDisplay();
+    addLog(`📖 "${bookTitle}", ${totalPages} страниц`);
+    
+    if (GITHUB_CONFIG.token) {
+        githubStatus.textContent = '✅ готов';
+        checkForSavedProgress();
+    } else {
+        githubStatus.textContent = '⚠️ нажмите GitHub';
+    }
+    
+    console.log(`✅ LitRes Downloader v5.0 загружен!`);
+    console.log(`📖 Книга: ${bookTitle} (${totalPages} стр.)`);
+    console.log(`🔑 GitHub: ${GITHUB_CONFIG.token ? '✅ настроен' : '❌ не настроен'}`);
+})();
