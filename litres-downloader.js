@@ -47,21 +47,58 @@
         };
     }
 
-    // --- 4. Определяем книгу ДО старта ---
+    // --- 4. ОПРЕДЕЛЯЕМ РЕАЛЬНОЕ КОЛИЧЕСТВО СТРАНИЦ ---
+    let totalPages = 0;
+    
+    // Способ 1: Из элемента pager-max
+    const pagerMax = document.getElementById('pager-max');
+    if (pagerMax) {
+        totalPages = parseInt(pagerMax.innerText) || 0;
+    }
+    
+    // Способ 2: Из URL параметра (если есть)
+    if (!totalPages) {
+        const totalParam = urlParams.get('total');
+        if (totalParam) {
+            totalPages = parseInt(totalParam) || 0;
+        }
+    }
+    
+    // Способ 3: Из данных Reader (если доступен)
+    if (!totalPages) {
+        // Пытаемся найти Reader
+        for (let key in window) {
+            try {
+                const obj = window[key];
+                if (obj && typeof obj === 'object' && obj.pageData && obj.pageData.pages) {
+                    totalPages = obj.pageData.pages.length;
+                    break;
+                }
+            } catch(e) {}
+        }
+    }
+    
+    // Способ 4: Если ничего не нашли — запрашиваем у пользователя
+    if (!totalPages || totalPages < 1) {
+        const userInput = prompt(
+            '📖 Не удалось автоматически определить количество страниц.\n\n' +
+            'Введите ОБЩЕЕ КОЛИЧЕСТВО СТРАНИЦ в книге:',
+            '570'
+        );
+        totalPages = parseInt(userInput) || 570;
+    }
+    
+    console.log(`📄 Определено страниц: ${totalPages}`);
+
+    // --- 5. Определяем книгу ---
     let bookTitle = urlParams.get('title') || document.title || 'book';
     bookTitle = bookTitle.replace(/[^a-zA-Zа-яА-Я0-9 ]/g, '').trim().slice(0, 50) || 'book';
 
-    let totalPages = 570;
-    const pagerMax = document.getElementById('pager-max');
-    if (pagerMax) {
-        totalPages = parseInt(pagerMax.innerText) || 570;
-    }
-
-    // Диапазон по умолчанию (будет показан в интерфейсе)
+    // Диапазон по умолчанию
     let defaultStart = 1;
     let defaultEnd = Math.min(10, totalPages);
 
-    // --- 5. Создаём UI с предпросмотром ---
+    // --- 6. Создаём UI с предпросмотром ---
     const uiHTML = `
         <div id="litres_downloader_ui" style="
             position: fixed;
@@ -94,7 +131,7 @@
                         📚 LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: 10px; color: #6a8aaa; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600;">
-                        📖 Предпросмотр + диапазон
+                        📖 Без ограничений
                     </div>
                 </div>
                 <button id="close_ui" style="
@@ -285,7 +322,7 @@
 
     document.body.insertAdjacentHTML('beforeend', uiHTML);
 
-    // --- 6. Получаем элементы ---
+    // --- 7. Получаем элементы ---
     const ui = document.getElementById('litres_downloader_ui');
     const closeBtn = document.getElementById('close_ui');
     const btnStart = document.getElementById('btn_start');
@@ -308,13 +345,13 @@
     const previewRange = document.getElementById('preview_range');
     const previewFilename = document.getElementById('preview_filename');
 
-    // --- 7. Состояние ---
+    // --- 8. Состояние ---
     let state = {
         isRunning: false,
         isPaused: false,
         isStopped: false,
         downloaded: 0,
-        total: 0,
+        total: defaultEnd - defaultStart + 1,
         startPage: defaultStart,
         endPage: defaultEnd,
         bookTitle: bookTitle,
@@ -326,7 +363,7 @@
         fileName: `${bookTitle}(${defaultStart}-${defaultEnd})`
     };
 
-    // --- 8. Функции анимации ---
+    // --- 9. Функции анимации ---
     function animateHand(action) {
         if (action === 'turn') {
             handAnimation.style.transform = 'translateX(30px) rotate(20deg)';
@@ -371,7 +408,7 @@
         }
     }
 
-    // --- 9. Функции UI ---
+    // --- 10. Функции UI ---
     function updateProgress() {
         const percent = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
         progressBar.style.width = `${Math.min(percent, 100)}%`;
@@ -447,7 +484,7 @@
         }
     }
 
-    // --- 10. Реалистичные задержки ---
+    // --- 11. Реалистичные задержки ---
     function getReadingDelay() {
         const baseDelay = Math.random() * 15000 + 5000;
         if (Math.random() < 0.15) {
@@ -472,7 +509,7 @@
         return Math.random() * 3000 + 1000;
     }
 
-    // --- 11. Скачивание и добавление в ZIP ---
+    // --- 12. Скачивание и добавление в ZIP ---
     async function downloadAndAddToZip(pageNum) {
         try {
             const apiPage = pageNum - 1;
@@ -568,7 +605,7 @@
         }
     }
 
-    // --- 12. Сборка и скачивание ZIP ---
+    // --- 13. Сборка и скачивание ZIP ---
     async function finalizeZip() {
         if (!state.zip) return;
 
@@ -605,7 +642,7 @@
         }
     }
 
-    // --- 13. Основной цикл ---
+    // --- 14. Основной цикл ---
     async function downloadLoop() {
         if (state.isStopped || state.downloaded >= state.total) {
             if (state.downloaded >= state.total && state.zip) {
@@ -647,7 +684,7 @@
         }, shortPause);
     }
 
-    // --- 14. Запуск ---
+    // --- 15. Запуск ---
     async function startDownload() {
         if (state.isRunning && state.isPaused) {
             state.isPaused = false;
@@ -672,13 +709,31 @@
             });
         }
 
-        // Запрашиваем диапазон у пользователя
-        const start = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${state.totalPages} стр.\n\nС какой страницы начать чтение?`, state.startPage)) || state.startPage;
-        if (start < 1) { setStatus('❌ Неверный номер!', true); return; }
+        // Запрашиваем диапазон у пользователя (БЕЗ ОГРАНИЧЕНИЙ)
+        const start = parseInt(prompt(
+            `📖 Книга: "${state.bookTitle}"\n` +
+            `📄 Всего страниц: ${state.totalPages}\n\n` +
+            `С какой страницы начать чтение? (1-${state.totalPages})`,
+            state.startPage
+        )) || state.startPage;
 
-        const end = parseInt(prompt(`📖 Книга: "${state.bookTitle}"\nВсего: ${state.totalPages} стр.\nНачинаем с: ${start}\n\nПо какую страницу читать?`, state.endPage)) || state.endPage;
-        if (end < start) { setStatus('❌ Конечная страница меньше начальной!', true); return; }
-        if (end > state.totalPages) { setStatus(`⚠️ Максимум ${state.totalPages} страниц.`, true); return; }
+        if (start < 1 || start > state.totalPages) {
+            setStatus(`❌ Номер страницы должен быть от 1 до ${state.totalPages}`, true);
+            return;
+        }
+
+        const end = parseInt(prompt(
+            `📖 Книга: "${state.bookTitle}"\n` +
+            `📄 Всего страниц: ${state.totalPages}\n` +
+            `Начинаем с: ${start}\n\n` +
+            `По какую страницу читать? (${start}-${state.totalPages})`,
+            state.endPage
+        )) || state.endPage;
+
+        if (end < start || end > state.totalPages) {
+            setStatus(`❌ Диапазон должен быть от ${start} до ${state.totalPages}`, true);
+            return;
+        }
 
         state.startPage = start;
         state.endPage = end;
@@ -706,7 +761,7 @@
         setTimeout(downloadLoop, 2000);
     }
 
-    // --- 15. Управление ---
+    // --- 16. Управление ---
     function stopDownload() {
         state.isStopped = true;
         state.isRunning = false;
@@ -734,7 +789,7 @@
         }
     }
 
-    // --- 16. Обработчики ---
+    // --- 17. Обработчики ---
     btnStart.addEventListener('click', startDownload);
     btnPause.addEventListener('click', pauseDownload);
     btnStop.addEventListener('click', stopDownload);
@@ -744,7 +799,7 @@
         ui.style.display = 'none';
     });
 
-    // --- 17. Экспорт ---
+    // --- 18. Экспорт ---
     window.downloaderUI = {
         start: startDownload,
         pause: pauseDownload,
@@ -757,10 +812,10 @@
         }
     };
 
-    // --- 18. Инициализация ---
+    // --- 19. Инициализация ---
     updateButtons();
-    setStatus('📖 Готов к чтению. Нажмите "Старт"');
+    setStatus(`📖 Готов к чтению (${totalPages} стр.)`);
     setReadingStatus('📚 Выберите диапазон страниц');
     updateFileNameDisplay();
-    console.log('✅ UI с предпросмотром создан!');
+    console.log(`✅ UI с предпросмотром создан! (${totalPages} страниц)`);
 })();
