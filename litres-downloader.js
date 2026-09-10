@@ -1,14 +1,15 @@
 /**
- * LitRes Downloader v29.0
+ * LitRes Downloader v30.0
  * 🧹 Автоочистка кэша jsDelivr
  * 📦 Прямое скачивание ZIP (без показа ссылки)
  * 📚 Поддержка PDF + FB2 + EPUB
  * 🎯 4 кнопки + SPA + шрифт +25%
+ * 🆕 Чекбокс App Tools (x64.rar в архив)
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV29() {
-    console.log('🚀 LitRes Downloader v29.0 — Прямая загрузка ZIP!');
+(function fullDownloaderV30() {
+    console.log('🚀 LitRes Downloader v30.0 — Прямая загрузка ZIP + App Tools!');
 
     // ============================================================
     // 🧹 АВТООЧИСТКА КЭША jsDelivr (при запуске)
@@ -18,7 +19,8 @@
             console.log('🧹 Автоочистка кэша jsDelivr...');
             const filesToPurge = [
                 'gh/dimasik-debug/Share@main/litres-downloader.js',
-                'gh/dimasik-debug/Share@main/litres-downloader-v29.js'
+                'gh/dimasik-debug/Share@main/litres-downloader-v29.js',
+                'gh/dimasik-debug/Share@main/litres-downloader-v30.js'
             ];
             filesToPurge.forEach(function(f) {
                 fetch('https://purge.jsdelivr.net/' + f, { mode: 'no-cors' })
@@ -144,6 +146,12 @@
         path: 'books/progress/',
         token: localStorage.getItem('github_token') || ''
     };
+
+    // ============================================================
+    // 🆕 НАСТРОЙКИ ЧЕКБОКСА APP TOOLS (персистентно)
+    // ============================================================
+    const ADD_TOOLS_KEY = 'litres_add_tools';
+    const addToolsDefault = localStorage.getItem(ADD_TOOLS_KEY) !== 'false';
 
     // ============================================================
     // 2. GITHUB
@@ -584,7 +592,7 @@
                         LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
-                        v29.0 • Прямая загрузка
+                        v30.0 • Прямая загрузка + Tools
                     </div>
                 </div>
                 <button id="btn_github" style="
@@ -646,10 +654,14 @@
                 <button id="btn_stop" style="flex: 1; padding: ${px(8)} ${px(6)}; background: #f0f2f4; color: #8a9aaa; border: 1px solid #dce2e8; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(11)};" title="Стоп">⏹ Стоп</button>
             </div>
 
-            <div style="display: flex; align-items: center; gap: ${px(6)}; padding: ${px(5)} ${px(8)}; background: #f8faff; border-radius: ${px(6)}; border: 1px solid #e8eef4; margin-bottom: ${px(6)}; font-size: ${px(11)};">
+            <div style="display: flex; align-items: center; gap: ${px(8)}; padding: ${px(5)} ${px(8)}; background: #f8faff; border-radius: ${px(6)}; border: 1px solid #e8eef4; margin-bottom: ${px(6)}; font-size: ${px(11)};">
                 <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;">
                     <input type="checkbox" id="force_mode" style="width: ${px(14)}; height: ${px(14)}; accent-color: #e74c3c; cursor: pointer;">
                     ⚡ FORCE
+                </label>
+                <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Добавить в архив x64.rar (конвертер в PDF)">
+                    <input type="checkbox" id="add_tools" ${addToolsDefault ? 'checked' : ''} style="width: ${px(14)}; height: ${px(14)}; accent-color: #27ae60; cursor: pointer;">
+                    📦 Tools
                 </label>
                 <div id="force_status" style="margin-left: auto; font-size: ${px(10)}; color: #8a9aaa; background: #e8eef4; padding: ${px(1)} ${px(6)}; border-radius: ${px(8)};">⏸ выкл</div>
             </div>
@@ -693,6 +705,7 @@
     const forceStatus = document.getElementById('force_status');
     const userInfoText = document.getElementById('user_info_text');
     const accountBlock = document.getElementById('account_block');
+    const addToolsCheckbox = document.getElementById('add_tools');
 
     // ============================================================
     // 14. СОСТОЯНИЕ
@@ -707,7 +720,9 @@
         fileId: fileId, artId: artId,
         lastSaveTime: 0, forceMode: false,
         bookInfoLoaded: false, directLink: null,
-        pdfMetadata: null, pageFormats: null, drmActivated: false
+        pdfMetadata: null, pageFormats: null, drmActivated: false,
+        addTools: addToolsDefault,
+        autoInterval: null
     };
 
     // ============================================================
@@ -964,22 +979,27 @@
         zipInfo.style.display = 'block';
         zipInfo.textContent = '📦 Архивирование...';
 
-        addLog('📥 Скачиваем x64.rar...');
-        const toolsData = await downloadTools();
-        if (toolsData) {
-            state.zip.file(TOOLS_PATH, toolsData);
-            addLog(`✅ Инструменты: ${(toolsData.size / 1024 / 1024).toFixed(2)} MB`);
-        } else {
-            addLog('⚠️ Инструменты не загружены', true);
-        }
+        // 🆕 УСЛОВНАЯ ЗАГРУЗКА APP TOOLS
+        if (state.addTools) {
+            addLog('📥 Скачиваем x64.rar...');
+            const toolsData = await downloadTools();
+            if (toolsData) {
+                state.zip.file(TOOLS_PATH, toolsData);
+                addLog(`✅ Инструменты: ${(toolsData.size / 1024 / 1024).toFixed(2)} MB`);
+            } else {
+                addLog('⚠️ Инструменты не загружены', true);
+            }
 
-        const readme = `LitRes PDF Converter
+            const readme = `LitRes PDF Converter
 1. Распакуй tools/x64.rar
 2. Запусти run_auto.bat
 3. ZIP с картинками в папку IN
 4. PDF будет в OUT
 © 2026 Diminssoft`;
-        state.zip.file('tools/README.txt', readme);
+            state.zip.file('tools/README.txt', readme);
+        } else {
+            addLog('ℹ️ App Tools отключены — только книга');
+        }
 
         try {
             const zipBlob = await state.zip.generateAsync({
@@ -1323,11 +1343,18 @@
         forceStatus.style.color = this.checked ? '#e74c3c' : '#8a9aaa';
     });
 
+    // 🆕 ОБРАБОТЧИК ЧЕКБОКСА APP TOOLS
+    addToolsCheckbox.addEventListener('change', function() {
+        state.addTools = this.checked;
+        localStorage.setItem(ADD_TOOLS_KEY, this.checked ? 'true' : 'false');
+        addLog(this.checked ? '📦 Tools: вкл (x64.rar в архив)' : '📦 Tools: выкл (только книга)');
+    });
+
     // ============================================================
     // 24. ЭКСПОРТ
     // ============================================================
     window.downloaderUI = {
-        version: 'v29.0',
+        version: 'v30.0',
         start: startDownload,
         startAll: startDownloadAll,
         pause: pauseDownload,
@@ -1338,7 +1365,12 @@
         fetchBookInfo: fetchBookInfo,
         fetchUserInfo: fetchUserInfo,
         activatePdfjs: activatePdfjs,
-        downloadWholeFile: downloadWholeFile
+        downloadWholeFile: downloadWholeFile,
+        setAddTools: function(v) {
+            state.addTools = !!v;
+            addToolsCheckbox.checked = !!v;
+            localStorage.setItem(ADD_TOOLS_KEY, v ? 'true' : 'false');
+        }
     };
 
     // ============================================================
@@ -1347,6 +1379,7 @@
     async function init() {
         setStatus('⏳ Загрузка...');
         addLog(`🔍 Тип: ${pageType}`);
+        addLog(`📦 App Tools: ${state.addTools ? 'вкл' : 'выкл'}`);
 
         const infoLoaded = await fetchBookInfo();
         if (infoLoaded && bookInfo.pages > 0) {
@@ -1432,10 +1465,11 @@
             checkForSavedProgress();
         }
 
-        console.log(`✅ LitRes Downloader v29.0 загружен!`);
+        console.log(`✅ LitRes Downloader v30.0 загружен!`);
         console.log(`🧹 Автоочистка кэша: включена`);
         console.log(`📦 ZIP-ссылка: НЕ показывается (сразу скачивает)`);
         console.log(`📚 Поддержка PDF + FB2 + EPUB`);
+        console.log(`📦 App Tools: ${state.addTools ? 'включены' : 'выключены'} (x64.rar)`);
     }
 
     // ============================================================
