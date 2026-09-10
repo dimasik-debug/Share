@@ -1,14 +1,14 @@
 /**
- * LitRes Downloader v28.0
+ * LitRes Downloader v29.0
  * 🧹 Автоочистка кэша jsDelivr
- * 📦 Правильный поиск ZIP (алгоритм v20.1)
+ * 📦 Прямое скачивание ZIP (без показа ссылки)
  * 📚 Поддержка PDF + FB2 + EPUB
  * 🎯 4 кнопки + SPA + шрифт +25%
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV28() {
-    console.log('🚀 LitRes Downloader v28.0 — Автоочистка + ZIP + FB2!');
+(function fullDownloaderV29() {
+    console.log('🚀 LitRes Downloader v29.0 — Прямая загрузка ZIP!');
 
     // ============================================================
     // 🧹 АВТООЧИСТКА КЭША jsDelivr (при запуске)
@@ -18,7 +18,7 @@
             console.log('🧹 Автоочистка кэша jsDelivr...');
             const filesToPurge = [
                 'gh/dimasik-debug/Share@main/litres-downloader.js',
-                'gh/dimasik-debug/Share@main/litres-downloader-v28.js'
+                'gh/dimasik-debug/Share@main/litres-downloader-v29.js'
             ];
             filesToPurge.forEach(function(f) {
                 fetch('https://purge.jsdelivr.net/' + f, { mode: 'no-cors' })
@@ -506,7 +506,7 @@
     }
 
     // ============================================================
-    // 10. 🔍 ПОИСК ПРЯМОЙ ZIP-ССЫЛКИ (алгоритм v20.1!)
+    // 10. 🔍 ПОИСК ПРЯМОЙ ZIP-ССЫЛКИ (алгоритм v20.1)
     // ============================================================
     async function findZipLink() {
         const fid = state.fileId || bookInfo.fileId;
@@ -584,7 +584,7 @@
                         LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
-                        v28.0 • Автоочистка + ZIP + FB2
+                        v29.0 • Прямая загрузка
                     </div>
                 </div>
                 <button id="btn_github" style="
@@ -829,40 +829,58 @@
     }
 
     // ============================================================
-    // 16. ПОКАЗ ПРЯМОЙ ССЫЛКИ
+    // 16. GITHUB ПРОГРЕСС
     // ============================================================
-    function showDirectLink(url) {
-        directLinksContainer.style.display = 'block';
-        const fnameMatch = url.match(/fname=([^&]+)/);
-        const fname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : 'book.zip';
-        const expMatch = url.match(/expires=(\d+)/);
-        const exp = expMatch ? new Date(parseInt(expMatch[1]) * 1000) : null;
-        const expColor = exp && (exp.getTime() - Date.now() < 600000) ? '#e74c3c' : '#6a8aaa';
+    async function saveProgress() {
+        if (!state.zip || state.downloaded === 0) return;
+        if (!GITHUB_CONFIG.token) return;
+        const now = Date.now();
+        if (now - state.lastSaveTime < 30000) return;
+        state.lastSaveTime = now;
 
-        directLinksList.innerHTML = `
-            <div style="display: flex; align-items: center; gap: ${px(8)}; background: #fff; border-radius: ${px(6)}; padding: ${px(8)}; border: 1px solid #e8eef4;">
-                <span style="font-size: ${px(20)};">📦</span>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-size: ${px(11)}; font-weight: 700; color: #1a2a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fname}</div>
-                    ${exp ? '<div style="font-size: ' + px(10) + '; color: ' + expColor + ';">⏰ до ' + exp.toLocaleTimeString('ru-RU') + '</div>' : ''}
-                </div>
-                <button id="btn_copy_direct" style="background: #e8eef4; border: none; border-radius: ${px(4)}; padding: ${px(4)} ${px(8)}; cursor: pointer; font-size: ${px(12)};">📋</button>
-            </div>
-        `;
+        const progressData = {
+            book_id: state.artId,
+            book_title: state.bookTitle,
+            book_author: state.bookAuthor,
+            file_id: state.fileId,
+            total_pages: state.total,
+            downloaded_pages: state.downloaded,
+            start_page: state.startPage,
+            end_page: state.endPage,
+            failed_pages: state.failedPages,
+            status: state.isRunning ? 'in_progress' : (state.isPaused ? 'paused' : 'stopped'),
+            last_update: new Date().toISOString()
+        };
+        const success = await saveProgressToGitHub(state.artId, progressData);
+        if (success) addLog(`💾 Прогресс сохранён (${state.downloaded}/${state.total})`);
+    }
 
-        const btnCopy = document.getElementById('btn_copy_direct');
-        if (btnCopy) {
-            btnCopy.addEventListener('click', function() {
-                try {
-                    navigator.clipboard.writeText(url);
-                    btnCopy.textContent = '✅';
-                    setTimeout(function() { btnCopy.textContent = '📋'; }, 1500);
-                } catch(e) { prompt('Скопируй:', url); }
-            });
+    async function checkForSavedProgress() {
+        if (!GITHUB_CONFIG.token) {
+            if (!askForGitHubToken()) return false;
         }
-
-        setStatus(`✅ Прямая ZIP-ссылка найдена!`);
-        addLog(`✅ ${fname}`);
+        const progress = await loadProgressFromGitHub(state.artId);
+        if (progress && progress.downloaded_pages > 0 && progress.downloaded_pages < progress.total_pages) {
+            const resume = confirm(
+                `📖 Найдено сохранение: "${progress.book_title}"\n\n` +
+                `📄 ${progress.downloaded_pages} из ${progress.total_pages}\n\n` +
+                `Продолжить?`
+            );
+            if (resume) {
+                state.downloaded = progress.downloaded_pages;
+                state.startPage = progress.start_page;
+                state.endPage = progress.end_page;
+                state.total = progress.total_pages;
+                state.failedPages = progress.failed_pages || [];
+                state.zip = new JSZip();
+                updateProgress();
+                state.isRunning = true;
+                updateButtons();
+                setTimeout(downloadLoop, 1000);
+                return true;
+            }
+        }
+        return false;
     }
 
     // ============================================================
@@ -931,62 +949,7 @@
     }
 
     // ============================================================
-    // 19. GITHUB ПРОГРЕСС
-    // ============================================================
-    async function saveProgress() {
-        if (!state.zip || state.downloaded === 0) return;
-        if (!GITHUB_CONFIG.token) return;
-        const now = Date.now();
-        if (now - state.lastSaveTime < 30000) return;
-        state.lastSaveTime = now;
-
-        const progressData = {
-            book_id: state.artId,
-            book_title: state.bookTitle,
-            book_author: state.bookAuthor,
-            file_id: state.fileId,
-            total_pages: state.total,
-            downloaded_pages: state.downloaded,
-            start_page: state.startPage,
-            end_page: state.endPage,
-            failed_pages: state.failedPages,
-            status: state.isRunning ? 'in_progress' : (state.isPaused ? 'paused' : 'stopped'),
-            last_update: new Date().toISOString()
-        };
-        const success = await saveProgressToGitHub(state.artId, progressData);
-        if (success) addLog(`💾 Прогресс сохранён (${state.downloaded}/${state.total})`);
-    }
-
-    async function checkForSavedProgress() {
-        if (!GITHUB_CONFIG.token) {
-            if (!askForGitHubToken()) return false;
-        }
-        const progress = await loadProgressFromGitHub(state.artId);
-        if (progress && progress.downloaded_pages > 0 && progress.downloaded_pages < progress.total_pages) {
-            const resume = confirm(
-                `📖 Найдено сохранение: "${progress.book_title}"\n\n` +
-                `📄 ${progress.downloaded_pages} из ${progress.total_pages}\n\n` +
-                `Продолжить?`
-            );
-            if (resume) {
-                state.downloaded = progress.downloaded_pages;
-                state.startPage = progress.start_page;
-                state.endPage = progress.end_page;
-                state.total = progress.total_pages;
-                state.failedPages = progress.failed_pages || [];
-                state.zip = new JSZip();
-                updateProgress();
-                state.isRunning = true;
-                updateButtons();
-                setTimeout(downloadLoop, 1000);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // ============================================================
-    // 20. ОСНОВНОЙ ЦИКЛ
+    // 19. ОСНОВНОЙ ЦИКЛ
     // ============================================================
     function isBookFinished() {
         if (state.consecutiveErrors >= 20) return true;
@@ -1104,7 +1067,7 @@
     }
 
     // ============================================================
-    // 21. ▶▶ СТАРТ ВСЁ (без запроса)
+    // 20. ▶▶ СТАРТ ВСЁ — ПРЯМАЯ ЗАГРУЗКА ZIP!
     // ============================================================
     async function startDownloadAll() {
         if (state.isRunning && state.isPaused) {
@@ -1140,6 +1103,7 @@
             return;
         }
 
+        // 🔓 PDF активация
         if (!state.drmActivated) {
             const ok = await activatePdfjs();
             if (ok) {
@@ -1154,14 +1118,17 @@
             }
         }
 
+        // 🔥 КЛЮЧЕВОЕ: ПРЯМАЯ ЗАГРУЗКА ZIP (без показа ссылки!)
         if (state.directLink) {
-            addLog(`📦 Скачиваем архив...`);
+            addLog(`📦 Скачиваем архив напрямую...`);
+            setStatus(`📦 Скачиваем архив...`);
             downloadWholeFile(state.directLink);
             state.isRunning = false;
             updateButtons();
             return;
         }
 
+        // 📥 Постраничная загрузка (для PDF)
         let totalPages = state.totalPages;
         if (!totalPages || totalPages < 1) {
             const input = prompt(`📄 Всего страниц:`, '100');
@@ -1194,7 +1161,7 @@
     }
 
     // ============================================================
-    // 22. ▶ СТАРТ (с запросом)
+    // 21. ▶ СТАРТ (с запросом)
     // ============================================================
     async function startDownload() {
         if (state.isRunning && state.isPaused) {
@@ -1240,10 +1207,12 @@
             }
         }
 
+        // 🔥 ПРЯМАЯ ЗАГРУЗКА ZIP
         if (state.directLink) {
             var isPdf = state.pdfMetadata && state.pageFormats && state.pageFormats.length > 0;
             if (!isPdf) {
-                addLog(`📦 Скачиваем архив...`);
+                addLog(`📦 Скачиваем архив напрямую...`);
+                setStatus(`📦 Скачиваем архив...`);
                 downloadWholeFile(state.directLink);
                 state.isRunning = false;
                 updateButtons();
@@ -1300,7 +1269,7 @@
     }
 
     // ============================================================
-    // 23. УПРАВЛЕНИЕ
+    // 22. УПРАВЛЕНИЕ
     // ============================================================
     function stopDownload() {
         state.isStopped = true;
@@ -1333,7 +1302,7 @@
     }
 
     // ============================================================
-    // 24. ОБРАБОТЧИКИ
+    // 23. ОБРАБОТЧИКИ
     // ============================================================
     btnStart.addEventListener('click', startDownload);
     btnStartAll.addEventListener('click', startDownloadAll);
@@ -1355,10 +1324,10 @@
     });
 
     // ============================================================
-    // 25. ЭКСПОРТ
+    // 24. ЭКСПОРТ
     // ============================================================
     window.downloaderUI = {
-        version: 'v28.0',
+        version: 'v29.0',
         start: startDownload,
         startAll: startDownloadAll,
         pause: pauseDownload,
@@ -1373,7 +1342,7 @@
     };
 
     // ============================================================
-    // 26. ИНИЦИАЛИЗАЦИЯ
+    // 25. ИНИЦИАЛИЗАЦИЯ
     // ============================================================
     async function init() {
         setStatus('⏳ Загрузка...');
@@ -1395,6 +1364,7 @@
             addLog(`🆔 fileId: ${state.fileId}`);
         }
 
+        // 👤 Инфо о юзере
         setTimeout(async () => {
             const user = await fetchUserInfo();
             if (user) {
@@ -1421,6 +1391,7 @@
             }
         }, 500);
 
+        // 🔓 PDF активация
         setTimeout(async () => {
             if (state.fileId) {
                 addLog('🔓 PDF активация...');
@@ -1439,15 +1410,17 @@
             }
         }, 2500);
 
+        // 🔍 Поиск ZIP-ссылки (тихо, без показа!)
         setTimeout(async () => {
             addLog('🔍 Поиск прямой ZIP-ссылки...');
             const zipLink = await findZipLink();
             if (zipLink) {
                 state.directLink = zipLink;
-                showDirectLink(zipLink);
-                addLog(`✅ Прямая ZIP-ссылка найдена!`);
+                // 🔥 НЕ ПОКАЗЫВАЕМ — просто сохраняем!
+                addLog(`✅ Прямая ZIP-ссылка найдена (готова к загрузке)`);
+                setStatus(`📦 ZIP готов — нажми "▶▶ Старт" для загрузки`);
             } else {
-                addLog('ℹ️ Прямая ZIP-ссылка не найдена (возможно, PDF)');
+                addLog('ℹ️ Прямая ZIP-ссылка не найдена (PDF)');
             }
         }, 3000);
 
@@ -1459,14 +1432,14 @@
             checkForSavedProgress();
         }
 
-        console.log(`✅ LitRes Downloader v28.0 загружен!`);
+        console.log(`✅ LitRes Downloader v29.0 загружен!`);
         console.log(`🧹 Автоочистка кэша: включена`);
-        console.log(`📦 ZIP-поиск: алгоритм v20.1`);
+        console.log(`📦 ZIP-ссылка: НЕ показывается (сразу скачивает)`);
         console.log(`📚 Поддержка PDF + FB2 + EPUB`);
     }
 
     // ============================================================
-    // 27. SPA-ОТСЛЕЖИВАНИЕ
+    // 26. SPA-ОТСЛЕЖИВАНИЕ
     // ============================================================
     let currentArtId = artId;
     let urlWatcherLock = false;
@@ -1511,7 +1484,6 @@
             previewBookAuthor.textContent = '...';
             previewTotalPages.textContent = '—';
             previewFormats.textContent = '—';
-            if (directLinksContainer) directLinksContainer.style.display = 'none';
             progressBar.style.width = '0%';
             updateButtons();
 
@@ -1542,7 +1514,7 @@
                 const zipLink = await findZipLink();
                 if (zipLink) {
                     state.directLink = zipLink;
-                    showDirectLink(zipLink);
+                    addLog(`📦 ZIP готов`);
                 }
             }
             updateTabTitle();
