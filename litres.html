@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📚 LitRes Downloader — Инструкция</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 40px 20px;
+    color: #1a2a4a;
+    line-height: 1.6;
+}
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+h1 {
+    font-size: 32px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.subtitle {
+    color: #6a8aaa;
+    font-size: 14px;
+    margin-bottom: 32px;
+}
+h2 {
+    font-size: 22px;
+    margin: 32px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e8eef4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: #1a2a4a;
+}
+section {
+    margin-bottom: 32px;
+}
+p { margin-bottom: 12px; color: #4a6a8a; }
+ol, ul { margin: 12px 0 12px 24px; color: #4a6a8a; }
+ol li, ul li { margin-bottom: 6px; }
+
+.bm-card {
+    background: #f8faff;
+    border: 2px solid #e8eef4;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+    transition: all 0.3s;
+}
+.bm-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 8px 24px rgba(102,126,234,0.15);
+    transform: translateY(-2px);
+}
+.bm-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.bm-icon {
+    font-size: 32px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.bm-info { flex: 1; }
+.bm-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1a2a4a;
+}
+.bm-desc {
+    font-size: 12px;
+    color: #8a9aaa;
+    margin-top: 2px;
+}
+
+.bookmarklet {
+    display: inline-block;
+    padding: 12px 22px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff !important;
+    text-decoration: none;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: grab;
+    user-select: none;
+    box-shadow: 0 4px 16px rgba(102,126,234,0.4);
+    transition: all 0.2s;
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+.bookmarklet:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102,126,234,0.5);
+}
+.bookmarklet:active { cursor: grabbing; }
+
+.copy-btn {
+    padding: 12px 18px;
+    background: #f0f4fa;
+    color: #1a2a4a;
+    border: 2px solid #e0e8f0;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.copy-btn:hover {
+    background: #e0e8f0;
+    border-color: #c0d0e0;
+}
+.copy-btn.copied {
+    background: #27ae60;
+    color: #fff;
+    border-color: #27ae60;
+}
+
+details {
+    margin-top: 12px;
+    background: #f0f4fa;
+    border-radius: 8px;
+    padding: 10px 14px;
+}
+details summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    color: #6a8aaa;
+    user-select: none;
+}
+details summary:hover { color: #1a5a9a; }
+details pre {
+    margin-top: 10px;
+    padding: 12px;
+    background: #1a2a4a;
+    color: #7dd3fc;
+    border-radius: 6px;
+    font-size: 10px;
+    line-height: 1.4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.hint {
+    background: #fff8e8;
+    border-left: 4px solid #f0a500;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #6a5a2a;
+}
+.hint strong { color: #1a2a4a; }
+
+.browser-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.tab {
+    padding: 8px 16px;
+    background: #f0f4fa;
+    border: 2px solid #e0e8f0;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6a8aaa;
+    cursor: pointer;
+    user-select: none;
+}
+.tab.active {
+    background: #667eea;
+    color: #fff;
+    border-color: #667eea;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+kbd {
+    background: #1a2a4a;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 2px solid #e8eef4;
+    text-align: center;
+    color: #8a9aaa;
+    font-size: 12px;
+}
+footer a {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>📚 LitRes Downloader</h1>
+    <div class="subtitle">Скачивание книг и аудиокниг с LitRes.ru</div>
+
+    <!-- ============================================ -->
+    <!-- ЧТО ЭТО -->
+    <!-- ============================================ -->
+    <section>
+        <h2>🎯 Что это</h2>
+        <p>Набор букмарклетов (закладок-скриптов) для скачивания контента с LitRes:</p>
+        <ul>
+            <li>📚 <strong>Книга</strong> — PDF, FB2, EPUB в ZIP-архиве</li>
+            <li>🎧 <strong>Аудио</strong> — MP3 по главам, готовый ZIP или M4B</li>
+            <li>🎛️ <strong>Выбор</strong> — сам определяет что на странице (книга или аудио)</li>
+        </ul>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- КАК УСТАНОВИТЬ -->
+    <!-- ============================================ -->
+    <section>
+        <h2>⚙️ Как установить</h2>
+
+        <div class="browser-tabs">
+            <div class="tab active" data-tab="chrome">🌐 Chrome / Edge / Yandex</div>
+            <div class="tab" data-tab="firefox">🦊 Firefox</div>
+            <div class="tab" data-tab="safari">🧭 Safari</div>
+        </div>
+
+        <div class="tab-content active" data-content="chrome">
+            <ol>
+                <li>Включи <strong>панель закладок</strong>: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></li>
+                <li><strong>Перетащи</strong> любую кнопку-ярлык ниже на панель закладок</li>
+                <li>Готово! Теперь при клике на закладку скрипт запустится</li>
+            </ol>
+        </div>
+
+        <div class="tab-content" data-content="firefox">
+            <ol>
+                <li>Включи <strong>панель закладок</strong>: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></li>
+                <li><strong>Перетащи</strong> кнопку-ярлык ниже на панель закладок</li>
+                <li>Либо создай вручную: ПКМ → «Добавить закладку» → вставь код из «Показать код»</li>
+            </ol>
+        </div>
+
+        <div class="tab-content" data-content="safari">
+            <ol>
+                <li>Включи панель закладок: <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></li>
+                <li>Меню <strong>Закладки → Добавить закладку</strong> (<kbd>Cmd</kbd>+<kbd>D</kbd>)</li>
+                <li>Название: любое. Адрес: скопируй из «Показать код»</li>
+            </ol>
+        </div>
+
+        <div class="hint">
+            💡 <strong>Совет:</strong> если перетаскивание не работает — нажми <strong>📋 Копировать код</strong> и создай закладку вручную: ПКМ по панели закладок → «Добавить страницу» → вставь код в поле URL.
+        </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- БУКМАРКЛЕТЫ -->
+    <!-- ============================================ -->
+    <section>
+        <h2>🚀 Ярлыки</h2>
+
+        <!-- КНИГА -->
+        <div class="bm-card">
+            <div class="bm-header">
+                <div class="bm-icon">📚</div>
+                <div class="bm-info">
+                    <div class="bm-title">Книга</div>
+                    <div class="bm-desc">PDF / FB2 / EPUB → ZIP-архив</div>
+                </div>
+            </div>
+            <a href="#" data-bm="book" class="bookmarklet">📚 LitRes Книга</a>
+            <button class="copy-btn" data-copy="book">📋 Копировать код</button>
+            <details>
+                <summary>Показать код</summary>
+                <pre data-code="book"></pre>
+            </details>
+        </div>
+
+        <!-- АУДИО -->
+        <div class="bm-card">
+            <div class="bm-header">
+                <div class="bm-icon">🎧</div>
+                <div class="bm-info">
+                    <div class="bm-title">Аудио</div>
+                    <div class="bm-desc">MP3 по главам, ZIP или M4B</div>
+                </div>
+            </div>
+            <a href="#" data-bm="audio" class="bookmarklet">🎧 LitRes Аудио</a>
+            <button class="copy-btn" data-copy="audio">📋 Копировать код</button>
+            <details>
+                <summary>Показать код</summary>
+                <pre data-code="audio"></pre>
+            </details>
+        </div>
+
+        <!-- ВЫБОР -->
+        <div class="bm-card">
+            <div class="bm-header">
+                <div class="bm-icon">🎛️</div>
+                <div class="bm-info">
+                    <div class="bm-title">Выбор (универсальный)</div>
+                    <div class="bm-desc">Спрашивает что загрузить + кнопка Авто</div>
+                </div>
+            </div>
+            <a href="#" data-bm="chooser" class="bookmarklet">🎛️ LitRes Выбор</a>
+            <button class="copy-btn" data-copy="chooser">📋 Копировать код</button>
+            <details>
+                <summary>Показать код</summary>
+                <pre data-code="chooser"></pre>
+            </details>
+        </div>
+
+        <!-- ИНСТРУКЦИЯ -->
+        <div class="bm-card">
+            <div class="bm-header">
+                <div class="bm-icon">📖</div>
+                <div class="bm-info">
+                    <div class="bm-title">Инструкция</div>
+                    <div class="bm-desc">Открывает эту страницу из репо</div>
+                </div>
+            </div>
+            <a href="#" data-bm="info" class="bookmarklet">📖 LitRes Инструкция</a>
+            <button class="copy-btn" data-copy="info">📋 Копировать код</button>
+            <details>
+                <summary>Показать код</summary>
+                <pre data-code="info"></pre>
+            </details>
+        </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- КАК ИСПОЛЬЗОВАТЬ -->
+    <!-- ============================================ -->
+    <section>
+        <h2>🎬 Как использовать</h2>
+        <ol>
+            <li>Открой нужную <strong>книгу или аудиокнигу</strong> на <a href="https://www.litres.ru" target="_blank">litres.ru</a></li>
+            <li>Кликни на <strong>закладку</strong> в панели закладок:
+                <ul>
+                    <li>📚 <strong>Книга</strong> — если это текстовая книга</li>
+                    <li>🎧 <strong>Аудио</strong> — если это аудиокнига</li>
+                    <li>🎛️ <strong>Выбор</strong> — если не уверен (сам определит)</li>
+                </ul>
+            </li>
+            <li>Внизу справа появится <strong>панель управления</strong></li>
+            <li>Жми кнопки для скачивания</li>
+        </ol>
+
+        <div class="hint">
+            ⚠️ <strong>Важно:</strong> нужна активная подписка LitRes. Скрипт использует твою сессию браузера — токены не передаются третьим лицам.
+        </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- FAQ -->
+    <!-- ============================================ -->
+    <section>
+        <h2>❓ FAQ</h2>
+
+        <h3>🔒 Это безопасно?</h3>
+        <p>Да. Скрипты загружаются с твоего же репозитория на GitHub. Все запросы идут на <code>api.litres.ru</code> и <code>www.litres.ru</code> с твоими куки. Никакие данные не отправляются наружу.</p>
+
+        <h3>📥 Куда качается?</h3>
+        <p>В папку загрузок браузера. По умолчанию это <code>Загрузки</code> или <code>Downloads</code>.</p>
+
+        <h3>🎧 В каком формате аудио?</h3>
+        <ul>
+            <li><strong>📦 ZIP</strong> — готовый архив со всеми MP3-главами (от LitRes)</li>
+            <li><strong>🎵 M4B</strong> — audiobook одним файлом с обложкой (для iPhone, VLC)</li>
+            <li><strong>🎧 Главы</strong> — свой ZIP, можно выбрать диапазон</li>
+        </ul>
+
+        <h3>📚 Что в ZIP книги?</h3>
+        <p>PDF-страницы (JPG/PNG) + инструменты конвертации <code>x64.rar</code> + README с инструкцией по сборке в PDF.</p>
+
+        <h3>🐛 Не работает?</h3>
+        <ul>
+            <li>Обнови страницу (<kbd>F5</kbd>) и кликни закладку снова</li>
+            <li>Проверь что залогинен в LitRes</li>
+            <li>Открой <kbd>F12</kbd> → Console и посмотри ошибки</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>© 2026 Diminssoft · <a href="https://github.com/dimasik-debug/Share" target="_blank">GitHub</a></p>
+    </footer>
+
+</div>
+
+<!-- ============================================ -->
+<!-- JAVASCRIPT -->
+<!-- ============================================ -->
+<script>
+// ============================================
+// БУКМАРКЛЕТЫ
+// ============================================
+const REPO_CDN = 'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/';
+const REPO_RAW = 'https://raw.githubusercontent.com/dimasik-debug/Share/main/';
+
+// Загрузчик скрипта с фоллбэком
+function makeLoader(file, name) {
+    return `javascript:(function(){` +
+        `var u=['${REPO_CDN}${file}?t='+Date.now(),'${REPO_RAW}${file}?t='+Date.now()],i=0;` +
+        `function L(){if(i>=u.length){alert('❌ ${name} не загрузился');return}` +
+        `var s=document.createElement('script');s.src=u[i++];` +
+        `s.onload=function(){console.log('✅ ${name} загружен')};` +
+        `s.onerror=L;document.head.appendChild(s)}L()})();`;
+}
+
+// 1. Книга
+const BM_BOOK = makeLoader('litres-downloader.js', 'Книга v30');
+
+// 2. Аудио
+const BM_AUDIO = makeLoader('litres-downloader-audio.js', 'Аудио v1.1');
+
+// 3. Инструкция
+const BM_INFO = `javascript:(function(){window.open('${REPO_CDN}litres.html','_blank')})();`;
+
+// 4. Chooser (выбор)
+const BM_CHOOSER = `javascript:(function(){` +
+    `if(window.__lrp)return;window.__lrp=1;` +
+    `var A=location.pathname.indexOf('/audiobook/')>-1,` +
+    `B='${REPO_CDN}',F='${REPO_RAW}',` +
+    `S={book:{f:'litres-downloader.js',n:'Книга'},audio:{f:'litres-downloader-audio.js',n:'Аудио'}};` +
+    `function L(k){var s=S[k],u=[B+s.f+'?t='+Date.now(),F+s.f+'?t='+Date.now()],i=0;` +
+    `function t(){if(i>=u.length){alert('❌ '+s.n+' не загрузился');return}` +
+    `var e=document.createElement('script');e.src=u[i++];` +
+    `e.onload=function(){console.log('✅ '+s.n+' загружен')};e.onerror=t;` +
+    `document.head.appendChild(e)}t();C()}` +
+    `function C(){var p=document.getElementById('__lrp');p&&p.remove();window.__lrp=0}` +
+    `var h='<div id="__lrp" style="position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif">' +` +
+    `'<div style="background:#fff;border-radius:14px;padding:24px;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +` +
+    `'<div style="font-size:20px;font-weight:800;color:#1a2a4a;margin-bottom:6px">LitRes Downloader</div>' +` +
+    `'<div style="color:#6a8aaa;font-size:13px;margin-bottom:16px">Выбери скрипт:</div>' +` +
+    `'<div style="display:flex;gap:8px;margin-bottom:14px">' +` +
+    `'<button data-k="book" style="flex:1;padding:16px 12px;background:'+(A?'#f0f4fa':'#1a3a6a')+';color:'+(A?'#6a8aaa':'#fff')+';border:2px solid '+(A?'#d0dae4':'#1a3a6a')+';border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;position:relative">📚 Книга<div style="font-size:11px;font-weight:400;margin-top:4px;opacity:0.85">PDF/FB2/EPUB → ZIP</div>'+(A?'':'<div style="position:absolute;top:6px;right:8px;font-size:9px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:6px">рекоменд.</div>')+'</button>' +` +
+    `'<button data-k="audio" style="flex:1;padding:16px 12px;background:'+(A?'#1a3a6a':'#f0f4fa')+';color:'+(A?'#fff':'#6a8aaa')+';border:2px solid '+(A?'#1a3a6a':'#d0dae4')+';border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;position:relative">🎧 Аудио<div style="font-size:11px;font-weight:400;margin-top:4px;opacity:0.85">MP3/M4B/ZIP</div>'+(A?'<div style="position:absolute;top:6px;right:8px;font-size:9px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:6px">рекоменд.</div>':'')+'</button></div>' +` +
+    `'<div style="display:flex;gap:8px">' +` +
+    `'<button data-a="auto" style="flex:1;padding:10px;background:#27ae60;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">⚡ Авто ('+(A?'Аудио':'Книга')+')</button>' +` +
+    `'<button data-a="close" style="padding:10px 18px;background:#f0f2f4;color:#6a8aaa;border:1px solid #d0dae4;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">✕</button>' +` +
+    `'</div><div style="font-size:10px;color:#aab8c4;text-align:center;margin-top:10px">Esc — закрыть</div>' +` +
+    `'</div></div>';` +
+    `document.body.insertAdjacentHTML('beforeend',h);` +
+    `var p=document.getElementById('__lrp');` +
+    `p.addEventListener('click',function(e){` +
+    `if(e.target===p)return C();` +
+    `var b=e.target.closest('button');if(!b)return;` +
+    `var k=b.dataset.k,a=b.dataset.a;` +
+    `if(a==='close')return C();` +
+    `if(a==='auto')return L(A?'audio':'book');` +
+    `k&&L(k)});` +
+    `document.addEventListener('keydown',function esc(e){` +
+    `e.key==='Escape'&&(C(),document.removeEventListener('keydown',esc))})})();`;
+
+// ============================================
+// РЕГИСТРАЦИЯ
+// ============================================
+const BOOKMARKLETS = {
+    book: BM_BOOK,
+    audio: BM_AUDIO,
+    chooser: BM_CHOOSER,
+    info: BM_INFO
+};
+
+// Ставим href на <a> и текст в <pre>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('a[data-bm]').forEach(a => {
+        const key = a.dataset.bm;
+        if (BOOKMARKLETS[key]) {
+            a.href = BOOKMARKLETS[key];
+        }
+    });
+    document.querySelectorAll('pre[data-code]').forEach(pre => {
+        const key = pre.dataset.code;
+        if (BOOKMARKLETS[key]) {
+            pre.textContent = BOOKMARKLETS[key];
+        }
+    });
+    document.querySelectorAll('button[data-copy]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const key = this.dataset.copy;
+            const code = BOOKMARKLETS[key];
+            navigator.clipboard.writeText(code).then(() => {
+                this.textContent = '✅ Скопировано!';
+                this.classList.add('copied');
+                setTimeout(() => {
+                    this.textContent = '📋 Копировать код';
+                    this.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                // Fallback для старых браузеров
+                const ta = document.createElement('textarea');
+                ta.value = code;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                this.textContent = '✅ Скопировано!';
+                this.classList.add('copied');
+                setTimeout(() => {
+                    this.textContent = '📋 Копировать код';
+                    this.classList.remove('copied');
+                }, 2000);
+            });
+        });
+    });
+});
+
+// ============================================
+// ТАБЫ БРАУЗЕРОВ
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            const target = this.dataset.tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelector(`[data-content="${target}"]`).classList.add('active');
+        });
+    });
+});
+</script>
+
+</body>
+</html>
