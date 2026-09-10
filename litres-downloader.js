@@ -507,228 +507,265 @@
     // ============================================================
     // 11. UI
     // ============================================================
-      const uiHTML = `
+    
         <div id="litres_downloader_ui" style="
             position: fixed;
-            bottom: 16px;
-            right: 16px;
+            bottom: 20px;
+            right: 20px;
             z-index: 99999;
             background: #ffffff;
             color: #1a2a4a;
-            border-radius: 14px;
-            padding: 14px 16px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            font-size: 12px;
-            width: 340px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            border-radius: 20px;
+            padding: 24px 28px;
+            font-family: 'Segoe UI', -apple-system, Arial, sans-serif;
+            font-size: 14px;
+            min-width: 400px;
+            max-width: 460px;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.15);
             border: 1px solid rgba(26, 42, 74, 0.08);
             user-select: none;
         ">
-            <!-- ЗАГОЛОВОК -->
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                <div style="font-size: 20px;">📚</div>
-                <div style="flex: 1;">
-                    <div style="font-weight: 800; font-size: 14px; line-height: 1.1;">
-                        LitRes <span style="color: #1a5a9a;">Downloader</span>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="8" fill="#1a3a6a"/>
+                    <path d="M16 4L4 12v8l12 8 12-8v-8L16 4z" stroke="#ffffff" stroke-width="2" fill="none"/>
+                    <path d="M10 12v8l6 4 6-4v-8l-6-4-6 4z" fill="#ffffff" opacity="0.9"/>
+                    <circle cx="16" cy="16" r="4" fill="#1a3a6a"/>
+                    <path d="M12 16l4-4 4 4-4 4-4-4z" fill="#ffffff"/>
+                </svg>
+                <div>
+                    <div style="font-weight: 800; font-size: 18px; color: #1a2a4a; letter-spacing: -0.5px; line-height: 1.2;">
+                        📚 LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
-                    <div style="font-size: 9px; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
-                        v23.0 • DRM
+                    <div style="font-size: 10px; color: #6a8aaa; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600;">
+                        📦 v23.0 — DRM-активация!
                     </div>
                 </div>
                 <button id="close_ui" style="
-                    background: rgba(26,42,74,0.05);
+                    margin-left: auto;
+                    background: rgba(26, 42, 74, 0.05);
                     border: none;
                     color: #8a9aaa;
                     cursor: pointer;
-                    font-size: 14px;
-                    padding: 3px 7px;
-                    border-radius: 6px;
+                    font-size: 18px;
+                    padding: 4px 8px;
+                    border-radius: 8px;
                 ">✕</button>
             </div>
 
-            <!-- КНИГА + ЮЗЕР (объединено, компактно) -->
             <div style="
                 background: #f0f7ff;
-                border-radius: 8px;
-                padding: 8px 10px;
-                margin-bottom: 8px;
-                border-left: 3px solid #1a5a9a;
-                font-size: 11px;
-                line-height: 1.4;
+                border-radius: 12px;
+                padding: 12px 16px;
+                margin-bottom: 14px;
+                border-left: 4px solid #1a5a9a;
             ">
-                <div style="font-weight: 700; color: #1a2a4a; margin-bottom: 2px;" id="preview_book_title">
-                    ${bookInfo.title}
+                <div style="font-weight: 700; font-size: 14px; color: #1a2a4a; margin-bottom: 4px;">
+                    📖 <span id="preview_book_title">${bookInfo.title}</span>
                 </div>
-                <div style="color: #4a6a8a;">
+                <div style="font-size: 12px; color: #4a6a8a;">
                     ✍️ <span id="preview_book_author">${bookInfo.author}</span>
-                    • 📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр.
-                    • 🖼️ <span id="preview_formats">—</span>
                 </div>
-                <div style="color: #6a8aaa; font-size: 10px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed #d4e2f0;">
-                    <span id="user_info_text">👤 Загрузка...</span>
+                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
+                    📄 Страниц: <span id="preview_total_pages">${bookInfo.pages || '—'}</span>
+                </div>
+                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
+                    🖼️ Форматы: <span id="preview_formats">—</span>
+                </div>
+                <div style="font-size: 10px; color: #8a9aaa; margin-top: 4px; border-top: 1px solid #e8eef4; padding-top: 4px;">
+                    📡 <span id="book_source">${bookInfo.source}</span> • Тип: <span id="page_type_label">${pageType}</span>
                 </div>
             </div>
 
-            <!-- БАЛАНС (только если есть) -->
+            <!-- 👤 ИНФО О ПОДПИСКЕ -->
+            <div id="user_info_block" style="
+                background: #f8faff;
+                border-radius: 12px;
+                padding: 10px 14px;
+                margin-bottom: 14px;
+                border: 1px solid #e8eef4;
+                font-size: 11px;
+                color: #4a6a8a;
+                line-height: 1.6;
+            ">
+                <div style="font-weight: 700; font-size: 12px; color: #1a2a4a; margin-bottom: 4px;">
+                    👤 Аккаунт
+                </div>
+                <div id="user_info_text">⏳ Загрузка...</div>
+            </div>
+
+            <!-- 💰 БАЛАНС -->
             <div id="account_block" style="
                 background: #fff8e8;
-                border-radius: 6px;
-                padding: 5px 8px;
-                margin-bottom: 8px;
+                border-radius: 12px;
+                padding: 10px 14px;
+                margin-bottom: 14px;
                 border: 1px solid #f0e0b8;
-                font-size: 10px;
+                font-size: 11px;
                 color: #6a5a2a;
                 display: none;
             "></div>
 
-            <!-- ZIP ССЫЛКА -->
             <div id="direct_links_container" style="
                 background: #f8fafc;
-                border-radius: 6px;
-                padding: 6px 8px;
-                margin-bottom: 8px;
+                border-radius: 12px;
+                padding: 12px 16px;
+                margin-bottom: 14px;
                 border: 1px solid #e8eef4;
                 display: none;
-                font-size: 10px;
             ">
+                <div style="font-weight: 600; font-size: 13px; color: #1a2a4a; margin-bottom: 8px;">
+                    📦 Прямая ZIP-ссылка:
+                </div>
                 <div id="direct_links_list"></div>
             </div>
 
-            <!-- СТАТУС + ПРОГРЕСС -->
             <div style="
                 background: #f0f4fa;
-                border-radius: 8px;
-                padding: 8px 10px;
-                margin-bottom: 8px;
+                border-radius: 12px;
+                padding: 12px 16px;
+                margin-bottom: 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-height: 60px;
             ">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
                     <div id="hand_animation" style="
-                        font-size: 20px;
-                        width: 28px;
-                        text-align: center;
+                        font-size: 32px;
                         transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+                        transform: translateX(0) rotate(0deg);
+                        width: 48px;
+                        text-align: center;
                     ">🖐️</div>
-                    <div style="flex: 1; min-width: 0;">
+                    <div style="flex: 1;">
                         <div id="reading_status" style="
                             font-weight: 600;
-                            font-size: 11px;
-                            white-space: nowrap;
-                            overflow: hidden;
-                            text-overflow: ellipsis;
-                        ">📖 Готов</div>
+                            font-size: 14px;
+                            color: #1a2a4a;
+                        ">📖 Готов к чтению</div>
                         <div id="reading_progress_text" style="
-                            font-size: 10px;
+                            font-size: 12px;
                             color: #6a8aaa;
                         ">Прогресс: 0%</div>
                     </div>
                     <div id="page_counter" style="
-                        font-size: 14px;
+                        font-size: 20px;
                         font-weight: 700;
                         color: #1a5a9a;
+                        min-width: 50px;
+                        text-align: right;
                     ">0/0</div>
                 </div>
+                <div id="log_status" style="
+                    font-size: 11px;
+                    color: #6a8aaa;
+                    background: #e8eef4;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    max-height: 60px;
+                    overflow-y: auto;
+                    font-family: 'Courier New', monospace;
+                ">⏳ Загрузка...</div>
+            </div>
 
+            <div style="margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a6a8a; margin-bottom: 6px;">
+                    <span id="progress_text">📥 Страниц: 0 из 0</span>
+                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
+                </div>
                 <div style="
                     width: 100%;
-                    height: 6px;
+                    height: 8px;
                     background: #e8eef4;
-                    border-radius: 3px;
+                    border-radius: 4px;
                     overflow: hidden;
-                    margin-bottom: 6px;
                 ">
                     <div id="progress_bar" style="
                         width: 0%;
                         height: 100%;
                         background: linear-gradient(90deg, #1a5a9a, #4a8af4);
-                        border-radius: 3px;
-                        transition: width 0.4s ease;
+                        border-radius: 4px;
+                        transition: width 0.6s ease;
                     "></div>
                 </div>
-
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6a8aaa; margin-bottom: 4px;">
-                    <span id="progress_text">📥 0 из 0</span>
-                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
-                </div>
-
-                <div id="log_status" style="
-                    font-size: 10px;
-                    color: #6a8aaa;
-                    background: #e8eef4;
-                    padding: 3px 6px;
-                    border-radius: 4px;
-                    max-height: 42px;
-                    overflow-y: auto;
-                    font-family: 'Courier New', monospace;
-                    line-height: 1.3;
-                ">⏳ Загрузка...</div>
             </div>
 
-            <!-- КНОПКИ -->
-            <div style="display: flex; gap: 4px; margin-bottom: 6px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
                 <button id="btn_github" style="
-                    padding: 6px 8px;
+                    padding: 10px 12px;
                     background: #24292e;
-                    color: #fff;
+                    color: #ffffff;
                     border: none;
-                    border-radius: 6px;
+                    border-radius: 10px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 11px;
-                ">🔑</button>
+                    font-size: 13px;
+                    min-width: 70px;
+                ">🔑 GitHub</button>
 
                 <button id="btn_start" style="
                     flex: 1;
-                    padding: 6px 8px;
+                    padding: 10px 12px;
                     background: #1a3a6a;
-                    color: #fff;
+                    color: #ffffff;
                     border: none;
-                    border-radius: 6px;
+                    border-radius: 10px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 11px;
+                    font-size: 13px;
+                    min-width: 70px;
                 ">▶ Старт</button>
 
                 <button id="btn_pause" style="
                     flex: 1;
-                    padding: 6px 8px;
+                    padding: 10px 12px;
                     background: #e8eef4;
                     color: #6a8aaa;
                     border: none;
-                    border-radius: 6px;
+                    border-radius: 10px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 11px;
-                ">⏸</button>
+                    font-size: 13px;
+                    min-width: 70px;
+                ">⏸ Пауза</button>
 
                 <button id="btn_stop" style="
                     flex: 1;
-                    padding: 6px 8px;
+                    padding: 10px 12px;
                     background: #f0f2f4;
                     color: #8a9aaa;
                     border: 1px solid #dce2e8;
-                    border-radius: 6px;
+                    border-radius: 10px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 11px;
-                ">⏹</button>
+                    font-size: 13px;
+                    min-width: 70px;
+                ">⏹ Стоп</button>
             </div>
 
-            <!-- FORCE -->
             <div style="
                 display: flex;
                 align-items: center;
-                gap: 6px;
-                padding: 5px 8px;
+                gap: 10px;
+                padding: 8px 12px;
                 background: #f8faff;
-                border-radius: 6px;
+                border-radius: 10px;
                 border: 1px solid #e8eef4;
-                margin-bottom: 6px;
-                font-size: 11px;
+                margin-bottom: 12px;
             ">
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
+                <label style="
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    font-size: 13px;
+                    color: #1a2a4a;
+                ">
                     <input type="checkbox" id="force_mode" style="
-                        width: 14px;
-                        height: 14px;
+                        width: 18px;
+                        height: 18px;
                         accent-color: #e74c3c;
                         cursor: pointer;
                     ">
@@ -736,29 +773,28 @@
                 </label>
                 <div id="force_status" style="
                     margin-left: auto;
-                    font-size: 10px;
+                    font-size: 11px;
                     color: #8a9aaa;
                     background: #e8eef4;
-                    padding: 1px 6px;
-                    border-radius: 8px;
+                    padding: 2px 10px;
+                    border-radius: 12px;
                 ">⏸ выкл</div>
             </div>
 
-            <!-- ФИНАЛЬНЫЙ СТАТУС -->
             <div id="status_text" style="
-                font-size: 10px;
+                font-size: 12px;
                 color: #6a8aaa;
                 text-align: center;
-                padding: 4px 0 2px;
+                padding: 8px 0 4px;
                 border-top: 1px solid #e8eef4;
-                min-height: 16px;
+                min-height: 22px;
             ">⏳ Загрузка...</div>
 
             <div id="zip_info" style="
-                font-size: 10px;
+                font-size: 11px;
                 color: #8aaaac;
                 text-align: center;
-                margin-top: 2px;
+                margin-top: 4px;
                 display: none;
             ">📦 Архивация...</div>
         </div>
