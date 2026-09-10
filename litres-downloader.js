@@ -1,14 +1,14 @@
 /**
- * LitRes Downloader v23.0
- * 🔥 РАБОТАЕТ ВЕЗДЕ — активация DRM на странице книги!
- * 👤 Инфо о пользователе + подписка
+ * LitRes Downloader v25.0
+ * 🔥 DRM-активация работает везде!
+ * 👤 Полная информация о подписке
  * 🛡️ Защита от покупок
- * 📦 Автоупаковка x64.rar
+ * 📦 x64.rar с fallback на jsDelivr
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV23() {
-    console.log('🚀 LitRes Downloader v23.0 — DRM-активация + подписка!');
+(function fullDownloaderV25() {
+    console.log('🚀 LitRes Downloader v25.0 — DRM + полная подписка!');
 
     // ============================================================
     // 🛡️ ЗАЩИТА ОТ ПОКУПОК
@@ -110,7 +110,10 @@
     // ============================================================
     // 1. НАСТРОЙКИ
     // ============================================================
-    const TOOLS_URL = 'https://github.com/dimasik-debug/Share/raw/main/x64.rar';
+    const TOOLS_URLS = [
+        'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/x64.rar',
+        'https://raw.githubusercontent.com/dimasik-debug/Share/main/x64.rar'
+    ];
     const TOOLS_PATH = 'tools/x64.rar';
 
     const GITHUB_CONFIG = {
@@ -351,7 +354,7 @@
     }
 
     // ============================================================
-    // 7. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ И ПОДПИСКЕ
+    // 7. 👤 ПОЛНАЯ ИНФО О ПОЛЬЗОВАТЕЛЕ И ПОДПИСКЕ
     // ============================================================
     async function fetchUserInfo() {
         try {
@@ -366,21 +369,51 @@
 
             const sub = p.subscription || {};
             const acc = p.account || {};
+            const prof = p.profile || {};
+            const loyalty = p.loyalty || {};
+            const bonusesInfo = loyalty.bonuses_info || {};
 
             return {
                 id: p.id,
                 login: p.login,
+                email: prof.email || null,
+                phone: prof.phone_number || null,
+                isEmailConfirmed: prof.is_email_confirmed || false,
+                isPhoneConfirmed: prof.is_phone_confirmed || false,
+                registeredAt: prof.registered_at || null,
+
                 subscription: sub.is_active ? {
-                    isTrial: sub.is_trial_period,
+                    isTrial: sub.is_trial_period || false,
                     validTill: sub.valid_till,
-                    price: sub.price,
+                    startDate: sub.start_date,
+                    price: sub.price || null,
                     planName: sub.plan_name || null,
-                    autoRenew: sub.prolongation_status === 'enabled'
+                    autoRenew: sub.prolongation_status === 'enabled',
+                    duration: sub.duration_in_months || null,
+                    paidMonths: sub.paid_months || null,
+                    purchaseOrigin: sub.purchase_origin || null
                 } : null,
+
+                abonement: p.abonement?.is_active ? {
+                    validTill: p.abonement.valid_till,
+                    price: p.abonement.price
+                } : null,
+
                 account: {
                     display: acc.display || 0,
-                    bonus: acc.bonus || 0
+                    real: acc.real || 0,
+                    bonus: acc.bonus || 0,
+                    full: acc.full || 0,
+                    currency: acc.currency || 'RUB'
                 },
+
+                loyalty: loyalty.is_loyalty_user ? {
+                    cashbackPercent: bonusesInfo.current_cashback_percent || 0,
+                    bonuses: bonusesInfo.current_available_bonuses || 0,
+                    level: bonusesInfo.current_loyalty_level_range || null,
+                    purchaseForNext: bonusesInfo.purchase_amount_for_next_level || 0
+                } : null,
+
                 basket: p.basket || { items_count: 0 }
             };
         } catch(e) {
@@ -390,7 +423,7 @@
     }
 
     // ============================================================
-    // 8. 🔥 АКТИВАЦИЯ PDF.js (открывает DRM!)
+    // 8. 🔥 АКТИВАЦИЯ PDF.js (ГИБРИДНЫЙ ПАРСИНГ!)
     // ============================================================
     async function activatePdfjs() {
         if (!state.fileId) return false;
@@ -398,7 +431,6 @@
         try {
             console.log('🔓 Активация PDF.js (index=1)...');
             
-            // 1. Запрос index=1 — активирует DRM
             const resp = await fetch(
                 `https://api.litres.ru/foundation/api/arts/files/${state.fileId}/link?index=1&is_trial=false`,
                 { method: 'GET', credentials: 'include', headers: getHeaders() }
@@ -415,50 +447,74 @@
             
             console.log('📥 Скачиваем метаданные PDF.js...');
             
-            // 2. Скачиваем .js
             const jsResp = await fetch(jsUrl, { credentials: 'omit' });
             if (!jsResp.ok) return false;
             
             const jsText = await jsResp.text();
+            console.log(`📄 Размер файла: ${jsText.length} символов`);
             
-            // 3. 🔥 ИСПРАВЛЕННЫЙ парсинг: находим от первой { до последней }
-            const firstBrace = jsText.indexOf('{');
-            const lastBrace = jsText.lastIndexOf('}');
+            // ============================================================
+            // ГИБРИДНЫЙ ПАРСИНГ
+            // ============================================================
             
-            if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
-                console.warn('⚠️ Не найдены { } в метаданных');
-                return false;
+            let title = null;
+            let authors = [];
+            let uuid = null;
+            let pageFormats = [];
+            
+            // 1️⃣ META — ВАЛИДНЫЙ JSON (двойные кавычки)
+            const metaMatch = jsText.match(/Meta\s*:\s*(\{[\s\S]*?\})\s*,\s*pages\s*:/);
+            
+            if (metaMatch) {
+                try {
+                    const meta = JSON.parse(metaMatch[1]);
+                    title = meta.Title || null;
+                    authors = meta.Authors || [];
+                    uuid = meta.UUID || null;
+                    console.log(`📖 Meta: "${title}", авторов: ${authors.length}`);
+                } catch(e) {
+                    console.warn('⚠️ Meta JSON error:', e.message);
+                    const tM = metaMatch[1].match(/"Title"\s*:\s*"([^"]+)"/);
+                    if (tM) title = tM[1];
+                    const uM = metaMatch[1].match(/"UUID"\s*:\s*"([^"]+)"/);
+                    if (uM) uuid = uM[1];
+                }
             }
             
-            const jsonStr = jsText.substring(firstBrace, lastBrace + 1);
+            // 2️⃣ PAGES — JS с ОДИНАРНЫМИ кавычками (только regex!)
+            const extMatches = [...jsText.matchAll(/ext\s*:\s*['"](\w+)['"]/g)];
+            pageFormats = extMatches.map(m => m[1]);
             
-            let pdfData;
-            try {
-                pdfData = JSON.parse(jsonStr);
-            } catch(e) {
-                console.warn('⚠️ Ошибка JSON:', e.message);
-                console.warn('📄 Первые 200 символов:', jsonStr.substring(0, 200));
+            console.log(`🖼️ Найдено страниц: ${pageFormats.length}`);
+            
+            // 3️⃣ Размеры
+            const wMatch = jsText.match(/w\s*:\s*(\d+)/);
+            const hMatch = jsText.match(/h\s*:\s*(\d+)/);
+            
+            if (pageFormats.length === 0) {
+                console.warn('⚠️ Страницы не найдены');
                 return false;
             }
-            
-            const pagesArr = pdfData.pages?.[0]?.p || [];
             
             state.pdfMetadata = {
-                title: pdfData.Meta?.Title,
-                authors: pdfData.Meta?.Authors || [],
-                uuid: pdfData.Meta?.UUID,
-                totalPages: pagesArr.length,
-                width: pdfData.pages?.[0]?.w,
-                height: pdfData.pages?.[0]?.h,
-                pageFormats: pagesArr.map(p => p.ext || 'jpg')
+                title: title || state.bookTitle,
+                authors,
+                uuid: uuid || '',
+                totalPages: pageFormats.length,
+                width: wMatch ? parseInt(wMatch[1]) : 1900,
+                height: hMatch ? parseInt(hMatch[1]) : 2704,
+                pageFormats: pageFormats
             };
             
-            state.totalPages = state.pdfMetadata.totalPages;
-            state.pageFormats = state.pdfMetadata.pageFormats;
+            state.totalPages = pageFormats.length;
+            state.pageFormats = pageFormats;
             state.drmActivated = true;
             
-            console.log(`✅ DRM активирован! Страниц: ${state.pdfMetadata.totalPages}`);
-            console.log(`🖼️ Формат 1-й: ${state.pageFormats[0]}`);
+            console.log(`✅ DRM активирован!`);
+            console.log(`📄 Страниц: ${state.totalPages}`);
+            console.log(`📖 Title: ${title}`);
+            console.log(`🖼️ Формат 1-й: ${pageFormats[0]}`);
+            
             return true;
             
         } catch(e) {
@@ -466,7 +522,6 @@
             return false;
         }
     }
-    
 
     // ============================================================
     // 9. ПОИСК ZIP-ССЫЛКИ
@@ -491,281 +546,284 @@
     }
 
     // ============================================================
-    // 10. ИНСТРУМЕНТЫ
+    // 10. ИНСТРУМЕНТЫ (с fallback!)
     // ============================================================
     let toolsBlob = null;
     async function downloadTools() {
         if (toolsBlob) return toolsBlob;
-        try {
-            const resp = await fetch(TOOLS_URL, { credentials: 'omit' });
-            if (!resp.ok) return null;
-            toolsBlob = await resp.blob();
-            return toolsBlob;
-        } catch(e) { return null; }
+        
+        for (const url of TOOLS_URLS) {
+            try {
+                console.log(`📥 Пробуем: ${url.substring(0, 60)}...`);
+                const resp = await fetch(url, { 
+                    method: 'GET',
+                    credentials: 'omit',
+                    mode: 'cors'
+                });
+                
+                if (!resp.ok) {
+                    console.warn(`⚠️ ${resp.status}`);
+                    continue;
+                }
+                
+                toolsBlob = await resp.blob();
+                console.log(`✅ Инструменты: ${(toolsBlob.size / 1024 / 1024).toFixed(2)} MB`);
+                return toolsBlob;
+            } catch(e) {
+                console.warn(`⚠️ Ошибка: ${e.message.substring(0, 80)}`);
+                continue;
+            }
+        }
+        
+        console.error('❌ Все URL провалились');
+        return null;
     }
 
     // ============================================================
     // 11. UI
     // ============================================================
-    
+    const uiHTML = `
         <div id="litres_downloader_ui" style="
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 16px;
+            right: 16px;
             z-index: 99999;
             background: #ffffff;
             color: #1a2a4a;
-            border-radius: 20px;
-            padding: 24px 28px;
-            font-family: 'Segoe UI', -apple-system, Arial, sans-serif;
-            font-size: 14px;
-            min-width: 400px;
-            max-width: 460px;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 12px;
+            width: 360px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
             border: 1px solid rgba(26, 42, 74, 0.08);
             user-select: none;
+            max-height: 95vh;
+            overflow-y: auto;
         ">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="32" height="32" rx="8" fill="#1a3a6a"/>
-                    <path d="M16 4L4 12v8l12 8 12-8v-8L16 4z" stroke="#ffffff" stroke-width="2" fill="none"/>
-                    <path d="M10 12v8l6 4 6-4v-8l-6-4-6 4z" fill="#ffffff" opacity="0.9"/>
-                    <circle cx="16" cy="16" r="4" fill="#1a3a6a"/>
-                    <path d="M12 16l4-4 4 4-4 4-4-4z" fill="#ffffff"/>
-                </svg>
-                <div>
-                    <div style="font-weight: 800; font-size: 18px; color: #1a2a4a; letter-spacing: -0.5px; line-height: 1.2;">
-                        📚 LitRes <span style="color: #1a5a9a;">Downloader</span>
+            <!-- ЗАГОЛОВОК -->
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <div style="font-size: 20px;">📚</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 800; font-size: 14px; line-height: 1.1;">
+                        LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
-                    <div style="font-size: 10px; color: #6a8aaa; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600;">
-                        📦 v23.0 — DRM-активация!
+                    <div style="font-size: 9px; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
+                        v25.0 • DRM + Подписка
                     </div>
                 </div>
                 <button id="close_ui" style="
-                    margin-left: auto;
-                    background: rgba(26, 42, 74, 0.05);
+                    background: rgba(26,42,74,0.05);
                     border: none;
                     color: #8a9aaa;
                     cursor: pointer;
-                    font-size: 18px;
-                    padding: 4px 8px;
-                    border-radius: 8px;
+                    font-size: 14px;
+                    padding: 3px 7px;
+                    border-radius: 6px;
                 ">✕</button>
             </div>
 
+            <!-- КНИГА -->
             <div style="
                 background: #f0f7ff;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
-                border-left: 4px solid #1a5a9a;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
+                border-left: 3px solid #1a5a9a;
+                font-size: 11px;
+                line-height: 1.4;
             ">
-                <div style="font-weight: 700; font-size: 14px; color: #1a2a4a; margin-bottom: 4px;">
-                    📖 <span id="preview_book_title">${bookInfo.title}</span>
+                <div style="font-weight: 700; color: #1a2a4a; margin-bottom: 2px;" id="preview_book_title">
+                    ${bookInfo.title}
                 </div>
-                <div style="font-size: 12px; color: #4a6a8a;">
+                <div style="color: #4a6a8a;">
                     ✍️ <span id="preview_book_author">${bookInfo.author}</span>
                 </div>
-                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
-                    📄 Страниц: <span id="preview_total_pages">${bookInfo.pages || '—'}</span>
+                <div style="color: #4a6a8a; margin-top: 2px;">
+                    📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр.
+                    • 🖼️ <span id="preview_formats">—</span>
                 </div>
-                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
-                    🖼️ Форматы: <span id="preview_formats">—</span>
-                </div>
-                <div style="font-size: 10px; color: #8a9aaa; margin-top: 4px; border-top: 1px solid #e8eef4; padding-top: 4px;">
-                    📡 <span id="book_source">${bookInfo.source}</span> • Тип: <span id="page_type_label">${pageType}</span>
-                </div>
+                <span id="book_source" style="display:none;">${bookInfo.source}</span>
             </div>
 
-            <!-- 👤 ИНФО О ПОДПИСКЕ -->
+            <!-- 👤 ПОЛЬЗОВАТЕЛЬ И ПОДПИСКА -->
             <div id="user_info_block" style="
                 background: #f8faff;
-                border-radius: 12px;
-                padding: 10px 14px;
-                margin-bottom: 14px;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
                 border: 1px solid #e8eef4;
-                font-size: 11px;
+                font-size: 10px;
                 color: #4a6a8a;
-                line-height: 1.6;
+                line-height: 1.5;
             ">
-                <div style="font-weight: 700; font-size: 12px; color: #1a2a4a; margin-bottom: 4px;">
+                <div style="font-weight: 700; font-size: 11px; color: #1a2a4a; margin-bottom: 4px;">
                     👤 Аккаунт
                 </div>
                 <div id="user_info_text">⏳ Загрузка...</div>
             </div>
 
-            <!-- 💰 БАЛАНС -->
+            <!-- 💰 БАЛАНС И БОНУСЫ -->
             <div id="account_block" style="
                 background: #fff8e8;
-                border-radius: 12px;
-                padding: 10px 14px;
-                margin-bottom: 14px;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
                 border: 1px solid #f0e0b8;
-                font-size: 11px;
+                font-size: 10px;
                 color: #6a5a2a;
                 display: none;
+                line-height: 1.5;
             "></div>
 
+            <!-- ZIP ССЫЛКА -->
             <div id="direct_links_container" style="
                 background: #f8fafc;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
+                border-radius: 6px;
+                padding: 6px 8px;
+                margin-bottom: 8px;
                 border: 1px solid #e8eef4;
                 display: none;
+                font-size: 10px;
             ">
-                <div style="font-weight: 600; font-size: 13px; color: #1a2a4a; margin-bottom: 8px;">
-                    📦 Прямая ZIP-ссылка:
-                </div>
                 <div id="direct_links_list"></div>
             </div>
 
+            <!-- СТАТУС + ПРОГРЕСС -->
             <div style="
                 background: #f0f4fa;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                min-height: 60px;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
             ">
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                     <div id="hand_animation" style="
-                        font-size: 32px;
-                        transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
-                        transform: translateX(0) rotate(0deg);
-                        width: 48px;
+                        font-size: 20px;
+                        width: 28px;
                         text-align: center;
+                        transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
                     ">🖐️</div>
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 0;">
                         <div id="reading_status" style="
                             font-weight: 600;
-                            font-size: 14px;
-                            color: #1a2a4a;
-                        ">📖 Готов к чтению</div>
+                            font-size: 11px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        ">📖 Готов</div>
                         <div id="reading_progress_text" style="
-                            font-size: 12px;
+                            font-size: 10px;
                             color: #6a8aaa;
                         ">Прогресс: 0%</div>
                     </div>
                     <div id="page_counter" style="
-                        font-size: 20px;
+                        font-size: 14px;
                         font-weight: 700;
                         color: #1a5a9a;
-                        min-width: 50px;
-                        text-align: right;
                     ">0/0</div>
                 </div>
-                <div id="log_status" style="
-                    font-size: 11px;
-                    color: #6a8aaa;
-                    background: #e8eef4;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    max-height: 60px;
-                    overflow-y: auto;
-                    font-family: 'Courier New', monospace;
-                ">⏳ Загрузка...</div>
-            </div>
 
-            <div style="margin-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a6a8a; margin-bottom: 6px;">
-                    <span id="progress_text">📥 Страниц: 0 из 0</span>
-                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
-                </div>
                 <div style="
                     width: 100%;
-                    height: 8px;
+                    height: 6px;
                     background: #e8eef4;
-                    border-radius: 4px;
+                    border-radius: 3px;
                     overflow: hidden;
+                    margin-bottom: 6px;
                 ">
                     <div id="progress_bar" style="
                         width: 0%;
                         height: 100%;
                         background: linear-gradient(90deg, #1a5a9a, #4a8af4);
-                        border-radius: 4px;
-                        transition: width 0.6s ease;
+                        border-radius: 3px;
+                        transition: width 0.4s ease;
                     "></div>
                 </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6a8aaa; margin-bottom: 4px;">
+                    <span id="progress_text">📥 0 из 0</span>
+                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
+                </div>
+
+                <div id="log_status" style="
+                    font-size: 10px;
+                    color: #6a8aaa;
+                    background: #e8eef4;
+                    padding: 3px 6px;
+                    border-radius: 4px;
+                    max-height: 42px;
+                    overflow-y: auto;
+                    font-family: 'Courier New', monospace;
+                    line-height: 1.3;
+                ">⏳ Загрузка...</div>
             </div>
 
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+            <!-- КНОПКИ -->
+            <div style="display: flex; gap: 4px; margin-bottom: 6px;">
                 <button id="btn_github" style="
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #24292e;
-                    color: #ffffff;
+                    color: #fff;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    min-width: 70px;
-                ">🔑 GitHub</button>
+                    font-size: 11px;
+                ">🔑</button>
 
                 <button id="btn_start" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #1a3a6a;
-                    color: #ffffff;
+                    color: #fff;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    min-width: 70px;
+                    font-size: 11px;
                 ">▶ Старт</button>
 
                 <button id="btn_pause" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #e8eef4;
                     color: #6a8aaa;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    min-width: 70px;
-                ">⏸ Пауза</button>
+                    font-size: 11px;
+                ">⏸</button>
 
                 <button id="btn_stop" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #f0f2f4;
                     color: #8a9aaa;
                     border: 1px solid #dce2e8;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    min-width: 70px;
-                ">⏹ Стоп</button>
+                    font-size: 11px;
+                ">⏹</button>
             </div>
 
+            <!-- FORCE -->
             <div style="
                 display: flex;
                 align-items: center;
-                gap: 10px;
-                padding: 8px 12px;
+                gap: 6px;
+                padding: 5px 8px;
                 background: #f8faff;
-                border-radius: 10px;
+                border-radius: 6px;
                 border: 1px solid #e8eef4;
-                margin-bottom: 12px;
+                margin-bottom: 6px;
+                font-size: 11px;
             ">
-                <label style="
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    cursor: pointer;
-                    font-weight: 600;
-                    font-size: 13px;
-                    color: #1a2a4a;
-                ">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
                     <input type="checkbox" id="force_mode" style="
-                        width: 18px;
-                        height: 18px;
+                        width: 14px;
+                        height: 14px;
                         accent-color: #e74c3c;
                         cursor: pointer;
                     ">
@@ -773,28 +831,29 @@
                 </label>
                 <div id="force_status" style="
                     margin-left: auto;
-                    font-size: 11px;
+                    font-size: 10px;
                     color: #8a9aaa;
                     background: #e8eef4;
-                    padding: 2px 10px;
-                    border-radius: 12px;
+                    padding: 1px 6px;
+                    border-radius: 8px;
                 ">⏸ выкл</div>
             </div>
 
+            <!-- ФИНАЛЬНЫЙ СТАТУС -->
             <div id="status_text" style="
-                font-size: 12px;
+                font-size: 10px;
                 color: #6a8aaa;
                 text-align: center;
-                padding: 8px 0 4px;
+                padding: 4px 0 2px;
                 border-top: 1px solid #e8eef4;
-                min-height: 22px;
+                min-height: 16px;
             ">⏳ Загрузка...</div>
 
             <div id="zip_info" style="
-                font-size: 11px;
+                font-size: 10px;
                 color: #8aaaac;
                 text-align: center;
-                margin-top: 4px;
+                margin-top: 2px;
                 display: none;
             ">📦 Архивация...</div>
         </div>
@@ -928,7 +987,7 @@
     function updateProgress() {
         const percent = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
         progressBar.style.width = `${Math.min(percent, 100)}%`;
-        progressText.textContent = `📥 Страниц: ${state.downloaded} из ${state.total}`;
+        progressText.textContent = `📥 ${state.downloaded} из ${state.total}`;
         percentText.textContent = `${percent}%`;
         pageCounter.textContent = `${state.downloaded}/${state.total}`;
         readingProgressText.textContent = `Прогресс: ${percent}%`;
@@ -968,11 +1027,11 @@
             btnStart.style.background = '#1a3a6a';
             btnStart.style.color = '#ffffff';
             btnPause.disabled = true;
-            btnPause.textContent = '⏸ Пауза';
+            btnPause.textContent = '⏸';
             btnPause.style.background = '#e8eef4';
             btnPause.style.color = '#8a9aaa';
             btnStop.disabled = true;
-            btnStop.textContent = '⏹ Стоп';
+            btnStop.textContent = '⏹';
             btnStop.style.background = '#f0f2f4';
             btnStop.style.color = '#b0c0d0';
         }
@@ -1077,9 +1136,7 @@
                 const data = await resp.json();
                 const url = data?.payload?.data?.link || data?.payload?.link || data?.data?.link || data?.link;
                 if (!url) continue;
-                // Если знаем формат — возвращаем сразу
                 if (state.pageFormats && state.pageFormats[apiPage]) return { url, ext };
-                // Проверяем
                 try {
                     const check = await fetch(url, { method: 'HEAD', credentials: 'omit' });
                     if (check.ok) return { url, ext };
@@ -1141,23 +1198,21 @@
         zipInfo.textContent = '📦 Архивирование...';
         addLog('📦 Архивируем...');
 
-        // Инструменты
         addLog('📥 Скачиваем x64.rar...');
         const toolsData = await downloadTools();
         if (toolsData) {
             state.zip.file(TOOLS_PATH, toolsData);
-            addLog(`✅ Добавлено: ${TOOLS_PATH}`);
+            addLog(`✅ Добавлено: ${TOOLS_PATH} (${(toolsData.size / 1024 / 1024).toFixed(2)} MB)`);
         } else {
             addLog('⚠️ Инструменты не загружены', true);
         }
 
-        // README
         const readme = `========================================
   LitRes PDF Converter — Инструкция
 ========================================
 
 ЧТО В АРХИВЕ:
-- tools/x64.rar — инструменты конвертации
+- tools/x64.rar — инструменты конвертации (7za.exe, itextsharp.dll, скрипты)
 - page_XXX.jpg  — страницы книги
 
 КАК ПОЛЬЗОВАТЬСЯ:
@@ -1288,7 +1343,6 @@
             return;
         }
 
-        // Получаем fileId, если нужно
         if (!state.fileId) {
             addLog('🔍 Получаем fileId из API...');
             if (!state.bookInfoLoaded) await fetchBookInfo();
@@ -1318,12 +1372,11 @@
             }
         }
 
-        // Прямая ZIP-ссылка
         if (state.directLink) {
             const useDirect = confirm(
                 `📚 Найдена прямая ZIP-ссылка!\n\n` +
                 `📖 ${state.bookTitle}\n\n` +
-                `✅ "OK" — открыть ссылку для скачивания\n` +
+                `✅ "OK" — открыть ссылку\n` +
                 `❌ "Отмена" — постраничная загрузка`
             );
             if (useDirect) {
@@ -1491,7 +1544,7 @@
             previewBookTitle.textContent = bookInfo.title;
             previewBookAuthor.textContent = bookInfo.author;
             previewTotalPages.textContent = bookInfo.pages;
-            bookSource.textContent = bookInfo.source;
+            if (bookSource) bookSource.textContent = bookInfo.source;
             state.bookTitle = bookInfo.title;
             state.bookAuthor = bookInfo.author;
             state.totalPages = bookInfo.pages;
@@ -1508,36 +1561,91 @@
             addLog('⚠️ Не удалось получить данные', true);
         }
 
-        // 2. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ
+        // 2. 👤 ПОЛНАЯ ИНФО О ПОЛЬЗОВАТЕЛЕ И ПОДПИСКЕ
         setTimeout(async () => {
             const user = await fetchUserInfo();
             if (user) {
-                let line = `👤 ID: <b>${user.id}</b>`;
-                if (user.login) line += ` • ${user.login}`;
-                userInfoText.innerHTML = line;
-
+                let html = '';
+                
+                // 👤 ID
+                html += `<div>👤 <b>ID:</b> ${user.id}`;
+                if (user.login) html += ` • ${user.login}`;
+                html += `</div>`;
+                
+                // 📧 Email + подтверждение
+                if (user.email) {
+                    const emailIcon = user.isEmailConfirmed ? '✅' : '⚠️';
+                    html += `<div style="font-size: 9px;">📧 ${user.email} ${emailIcon}</div>`;
+                }
+                
+                // 📅 Дата регистрации
+                if (user.registeredAt) {
+                    const regDate = new Date(user.registeredAt);
+                    const years = Math.floor((Date.now() - regDate) / (365.25 * 86400000));
+                    html += `<div style="font-size: 9px; color: #8a9aaa;">📅 С нами ${years} лет</div>`;
+                }
+                
+                // ⭐ ПОДПИСКА
                 if (user.subscription) {
                     const till = new Date(user.subscription.validTill);
+                    const start = user.subscription.startDate ? new Date(user.subscription.startDate) : null;
                     const now = new Date();
                     const daysLeft = Math.ceil((till - now) / 86400000);
+                    const totalDays = start ? Math.ceil((till - start) / 86400000) : null;
+                    const usedDays = totalDays ? totalDays - daysLeft : null;
+                    const percent = totalDays ? Math.round((usedDays / totalDays) * 100) : null;
+                    
                     const subType = user.subscription.isTrial ? '🎁 Trial' : '⭐ Активна';
+                    const autoRenew = user.subscription.autoRenew ? '🔄 Авто' : '⏸ Без авто';
                     const daysColor = daysLeft < 3 ? '#e74c3c' : (daysLeft < 7 ? '#f0a500' : '#27ae60');
                     
-                    userInfoText.innerHTML += `<br>${subType} • до <b>${till.toLocaleDateString('ru-RU')}</b>` +
-                        `<br><span style="color: ${daysColor}; font-weight: 700;">⏳ Осталось: ${daysLeft} дн.</span>`;
+                    // Прогресс-бар подписки
+                    const bar = totalDays ? `
+                        <div style="background: #e8eef4; height: 3px; border-radius: 2px; margin: 3px 0; overflow: hidden;">
+                            <div style="width: ${percent}%; height: 100%; background: ${daysColor}; transition: width 0.5s;"></div>
+                        </div>
+                    ` : '';
+                    
+                    html += `
+                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d4e2f0;">
+                            <div><b>${subType}</b> ${autoRenew}</div>
+                            ${bar}
+                            <div style="font-size: 9px;">📅 <b>${till.toLocaleDateString('ru-RU')}</b> • <span style="color: ${daysColor}; font-weight: 700;">${daysLeft} дн.</span></div>
+                            ${user.subscription.price ? `<div style="font-size: 9px; color: #8a9aaa;">💰 ${user.subscription.price} ₽ / мес</div>` : ''}
+                            ${user.subscription.planName ? `<div style="font-size: 9px; color: #8a9aaa;">📦 ${user.subscription.planName}</div>` : ''}
+                        </div>
+                    `;
+                    
                     addLog(`📅 Подписка до: ${till.toLocaleString('ru-RU')} (${daysLeft} дн.)`);
+                    addLog(`📦 Тип: ${subType}, цена: ${user.subscription.price || '?'} ₽`);
                 } else {
-                    userInfoText.innerHTML += `<br><span style="color: #8a9aaa;">❌ Нет активной подписки</span>`;
+                    html += `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d4e2f0; color: #8a9aaa;">❌ Нет активной подписки</div>`;
                     addLog('ℹ️ Подписка не активна');
                 }
-
-                if (user.account.display > 0 || user.account.bonus > 0) {
+                
+                userInfoText.innerHTML = html;
+                
+                // 💰 БАЛАНС И БОНУСЫ
+                const hasBalance = user.account.display > 0 || user.account.bonus > 0 || user.account.real > 0;
+                if (hasBalance) {
                     accountBlock.style.display = 'block';
-                    accountBlock.innerHTML = `💰 <b>Баланс:</b> ${user.account.display.toFixed(2)} ₽` +
-                        (user.account.bonus > 0 ? ` • 🎁 Бонусы: ${user.account.bonus}` : '');
+                    let accHtml = '<div style="font-weight: 700; font-size: 11px; color: #1a2a4a; margin-bottom: 3px;">💰 Баланс</div>';
+                    if (user.account.display > 0) accHtml += `<div>💵 На счёте: <b>${user.account.display.toFixed(2)} ₽</b></div>`;
+                    if (user.account.real > 0) accHtml += `<div>💳 Реальный: <b>${user.account.real.toFixed(2)} ₽</b></div>`;
+                    if (user.account.bonus > 0) accHtml += `<div>🎁 Бонусы: <b>${user.account.bonus}</b></div>`;
+                    
+                    if (user.loyalty) {
+                        accHtml += `<div style="font-size: 9px; margin-top: 3px; color: #8a7a4a;">⭐ Кэшбэк: ${user.loyalty.cashbackPercent}%`;
+                        if (user.loyalty.purchaseForNext > 0) {
+                            accHtml += ` • До след. уровня: ${Math.round(user.loyalty.purchaseForNext)} ₽`;
+                        }
+                        accHtml += `</div>`;
+                    }
+                    
+                    accountBlock.innerHTML = accHtml;
                 }
-
-                addLog(`👤 Пользователь ID: ${user.id}`);
+                
+                addLog(`👤 Пользователь: ${user.login || user.id}`);
             } else {
                 userInfoText.textContent = '👤 Не удалось загрузить';
                 userInfoText.style.color = '#8a9aaa';
@@ -1575,16 +1683,16 @@
                     }
                     
                     setStatus(`✅ "${state.bookTitle}" (${state.totalPages} стр.)`);
+                    
+                    // 🔥 ZIP ищем ТОЛЬКО после активации!
+                    const zipLink = await findZipLink();
+                    if (zipLink) {
+                        state.directLink = zipLink;
+                        showDirectLink(zipLink);
+                    }
                 } else {
                     addLog('⚠️ DRM не активирован автоматически', true);
                     addLog('💡 Попробуем при нажатии Старт');
-                }
-
-                // Поиск ZIP-ссылки
-                const zipLink = await findZipLink();
-                if (zipLink) {
-                    state.directLink = zipLink;
-                    showDirectLink(zipLink);
                 }
             }
         }, 2500);
@@ -1599,12 +1707,13 @@
             addLog('⚠️ GitHub не настроен (нажмите 🔑)');
         }
 
-        console.log(`✅ LitRes Downloader v23.0 загружен!`);
+        console.log(`✅ LitRes Downloader v25.0 загружен!`);
         console.log(`📖 ${state.bookTitle} (${state.totalPages} стр.)`);
         console.log(`🆔 Тип: ${pageType}, fileId: ${state.fileId || '(из API)'}`);
         console.log(`🛡️ Защита от покупок: активна`);
         console.log(`🔓 DRM-активация: включена`);
-        console.log(`📦 Инструменты: x64.rar → tools/`);
+        console.log(`📦 Инструменты: x64.rar (jsDelivr + raw fallback)`);
+        console.log(`👤 Полная инфо о подписке: включена`);
     }
 
     init();
