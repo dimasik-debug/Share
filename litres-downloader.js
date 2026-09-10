@@ -1,18 +1,19 @@
 /**
- * LitRes Downloader v26.0
- * 🔄 SPA-отслеживание + шрифт +25%
+ * LitRes Downloader v27.0
+ * ▶▶ Старт (без запроса) + ▶ Старт (с запросом) + ⏸ Пауза + ⏹ Стоп
+ * 🔄 SPA-отслеживание + 🔤 Шрифт +25%
  * 🔥 DRM-активация + полная подписка
  * 🛡️ Защита от покупок
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV26() {
-    console.log('🚀 LitRes Downloader v26.0 — SPA + крупный шрифт!');
+(function fullDownloaderV27() {
+    console.log('🚀 LitRes Downloader v27.0 — 4 кнопки + SPA!');
 
     // ============================================================
     // 🔤 ГЛОБАЛЬНЫЙ МАСШТАБ (1.25 = +25%)
     // ============================================================
-    const S = 1.25;  // ← множитель всех размеров
+    const S = 1.25;
     const px = (v) => `${Math.round(v * S * 100) / 100}px`;
 
     // ============================================================
@@ -423,7 +424,7 @@
     }
 
     // ============================================================
-    // 8. 🔥 АКТИВАЦИЯ PDF.js (ГИБРИДНЫЙ ПАРСИНГ!)
+    // 8. 🔥 АКТИВАЦИЯ PDF.js
     // ============================================================
     async function activatePdfjs() {
         if (!state.fileId) return false;
@@ -458,7 +459,6 @@
             let uuid = null;
             let pageFormats = [];
             
-            // Meta — валидный JSON
             const metaMatch = jsText.match(/Meta\s*:\s*(\{[\s\S]*?\})\s*,\s*pages\s*:/);
             if (metaMatch) {
                 try {
@@ -475,7 +475,6 @@
                 }
             }
             
-            // pages — JS с одинарными кавычками
             const extMatches = [...jsText.matchAll(/ext\s*:\s*['"](\w+)['"]/g)];
             pageFormats = extMatches.map(m => m[1]);
             
@@ -563,7 +562,7 @@
     }
 
     // ============================================================
-    // 11. UI (все размеры умножены на S=1.25)
+    // 11. UI
     // ============================================================
     const uiHTML = `
         <div id="litres_downloader_ui" style="
@@ -577,7 +576,7 @@
             padding: ${px(14)} ${px(16)};
             font-family: 'Segoe UI', Arial, sans-serif;
             font-size: ${px(12)};
-            width: ${px(360)};
+            width: ${px(380)};
             box-shadow: 0 ${px(8)} ${px(32)} rgba(0,0,0,0.15);
             border: 1px solid rgba(26, 42, 74, 0.08);
             user-select: none;
@@ -592,9 +591,19 @@
                         LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
-                        v26.0 • SPA + Font+25%
+                        v27.0 • 4 кнопки + SPA
                     </div>
                 </div>
+                <button id="btn_github" style="
+                    background: #24292e;
+                    color: #fff;
+                    border: none;
+                    cursor: pointer;
+                    font-size: ${px(12)};
+                    padding: ${px(4)} ${px(8)};
+                    border-radius: ${px(6)};
+                    font-weight: 700;
+                " title="GitHub токен">🔑</button>
                 <button id="close_ui" style="
                     background: rgba(26,42,74,0.05);
                     border: none;
@@ -741,22 +750,23 @@
                 ">⏳ Загрузка...</div>
             </div>
 
-            <!-- КНОПКИ -->
+            <!-- КНОПКИ (4 шт) -->
             <div style="display: flex; gap: ${px(4)}; margin-bottom: ${px(6)};">
-                <button id="btn_github" style="
-                    padding: ${px(6)} ${px(8)};
-                    background: #24292e;
+                <button id="btn_start_all" style="
+                    flex: 1;
+                    padding: ${px(8)} ${px(6)};
+                    background: #27ae60;
                     color: #fff;
                     border: none;
                     border-radius: ${px(6)};
                     cursor: pointer;
                     font-weight: 700;
                     font-size: ${px(11)};
-                ">🔑</button>
+                " title="Скачать ВСЁ (без запроса)">▶▶ Старт</button>
 
                 <button id="btn_start" style="
                     flex: 1;
-                    padding: ${px(6)} ${px(8)};
+                    padding: ${px(8)} ${px(6)};
                     background: #1a3a6a;
                     color: #fff;
                     border: none;
@@ -764,11 +774,11 @@
                     cursor: pointer;
                     font-weight: 700;
                     font-size: ${px(11)};
-                ">▶ Старт</button>
+                " title="Скачать выбранные страницы">▶ Старт</button>
 
                 <button id="btn_pause" style="
                     flex: 1;
-                    padding: ${px(6)} ${px(8)};
+                    padding: ${px(8)} ${px(6)};
                     background: #e8eef4;
                     color: #6a8aaa;
                     border: none;
@@ -776,11 +786,11 @@
                     cursor: pointer;
                     font-weight: 700;
                     font-size: ${px(11)};
-                ">⏸</button>
+                " title="Пауза">⏸ Пауза</button>
 
                 <button id="btn_stop" style="
                     flex: 1;
-                    padding: ${px(6)} ${px(8)};
+                    padding: ${px(8)} ${px(6)};
                     background: #f0f2f4;
                     color: #8a9aaa;
                     border: 1px solid #dce2e8;
@@ -788,7 +798,7 @@
                     cursor: pointer;
                     font-weight: 700;
                     font-size: ${px(11)};
-                ">⏹</button>
+                " title="Стоп">⏹ Стоп</button>
             </div>
 
             <!-- FORCE -->
@@ -851,6 +861,7 @@
     const closeBtn = document.getElementById('close_ui');
     const btnGitHub = document.getElementById('btn_github');
     const btnStart = document.getElementById('btn_start');
+    const btnStartAll = document.getElementById('btn_start_all');
     const btnPause = document.getElementById('btn_pause');
     const btnStop = document.getElementById('btn_stop');
     const progressBar = document.getElementById('progress_bar');
@@ -980,15 +991,16 @@
     function updateButtons() {
         if (state.isRunning && !state.isPaused) {
             btnStart.disabled = true;
-            btnStart.textContent = '▶ Читаем...';
             btnStart.style.background = '#b0c4d8';
             btnStart.style.color = '#8a9aaa';
+            btnStartAll.disabled = true;
+            btnStartAll.style.background = '#b0d4b8';
+            btnStartAll.style.color = '#8a9aaa';
             btnPause.disabled = false;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#f0a500';
             btnPause.style.color = '#ffffff';
             btnStop.disabled = false;
-            btnStop.textContent = '⏹ Стоп';
             btnStop.style.background = '#fce4e4';
             btnStop.style.color = '#e74c3c';
         } else if (state.isRunning && state.isPaused) {
@@ -996,12 +1008,14 @@
             btnStart.textContent = '▶ Продолжить';
             btnStart.style.background = '#1a3a6a';
             btnStart.style.color = '#ffffff';
+            btnStartAll.disabled = true;
+            btnStartAll.style.background = '#b0d4b8';
+            btnStartAll.style.color = '#8a9aaa';
             btnPause.disabled = true;
-            btnPause.textContent = '⏸ На паузе';
+            btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
             btnPause.style.color = '#8a9aaa';
             btnStop.disabled = false;
-            btnStop.textContent = '⏹ Стоп';
             btnStop.style.background = '#fce4e4';
             btnStop.style.color = '#e74c3c';
         } else {
@@ -1009,12 +1023,15 @@
             btnStart.textContent = '▶ Старт';
             btnStart.style.background = '#1a3a6a';
             btnStart.style.color = '#ffffff';
+            btnStartAll.disabled = false;
+            btnStartAll.textContent = '▶▶ Старт';
+            btnStartAll.style.background = '#27ae60';
+            btnStartAll.style.color = '#ffffff';
             btnPause.disabled = true;
-            btnPause.textContent = '⏸';
+            btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
             btnPause.style.color = '#8a9aaa';
             btnStop.disabled = true;
-            btnStop.textContent = '⏹';
             btnStop.style.background = '#f0f2f4';
             btnStop.style.color = '#b0c0d0';
         }
@@ -1296,7 +1313,102 @@
     }
 
     // ============================================================
-    // 21. СТАРТ
+    // 21. ▶▶ СТАРТ (БЕЗ ЗАПРОСА)
+    // ============================================================
+    async function startDownloadAll() {
+        if (state.isRunning && state.isPaused) {
+            state.isPaused = false;
+            setStatus('▶ Продолжаем...');
+            updateButtons();
+            downloadLoop();
+            return;
+        }
+        if (state.isRunning) return;
+
+        if (!JSZipLoaded) {
+            setStatus('⏳ Загрузка JSZip...', true);
+            await new Promise(resolve => {
+                const check = setInterval(() => {
+                    if (JSZipLoaded) { clearInterval(check); resolve(); }
+                }, 200);
+            });
+        }
+
+        const hasProgress = await checkForSavedProgress();
+        if (hasProgress) return;
+
+        updateSession();
+        if (!sessionData.sessionId) {
+            setStatus('⚠️ Нет session-id. Обновите страницу (F5)!', true);
+            return;
+        }
+
+        if (!state.fileId) {
+            addLog('🔍 Получаем fileId из API...');
+            if (!state.bookInfoLoaded) await fetchBookInfo();
+            state.fileId = bookInfo.fileId;
+        }
+        if (!state.fileId) {
+            setStatus('❌ Не удалось получить fileId!', true);
+            return;
+        }
+
+        if (!state.drmActivated) {
+            setStatus('🔓 Активация доступа...');
+            const ok = await activatePdfjs();
+            if (ok) {
+                addLog(`✅ DRM активирован! Страниц: ${state.totalPages}`);
+                if (state.pdfMetadata?.title) {
+                    previewBookTitle.textContent = state.pdfMetadata.title;
+                    state.bookTitle = state.pdfMetadata.title;
+                }
+                if (state.totalPages) previewTotalPages.textContent = state.totalPages;
+                if (state.pageFormats) {
+                    const jpg = state.pageFormats.filter(f => f === 'jpg').length;
+                    const gif = state.pageFormats.filter(f => f === 'gif').length;
+                    previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
+                }
+            } else {
+                addLog('⚠️ DRM не активирован', true);
+            }
+        }
+
+        let totalPages = state.totalPages;
+        if (!totalPages || totalPages < 1) {
+            const input = prompt(`📄 Не удалось определить страницы. Введите вручную:`, '100');
+            if (input === null) return;
+            totalPages = parseInt(input) || 100;
+            state.totalPages = totalPages;
+            previewTotalPages.textContent = totalPages;
+        }
+
+        addLog(`🚀▶▶ СТАРТ: ВСЕ ${totalPages} страниц`);
+        addLog(`📥 Диапазон: 1-${totalPages}`);
+
+        state.startPage = 1;
+        state.endPage = totalPages;
+        state.total = totalPages;
+        state.downloaded = 0;
+        state.errors = 0;
+        state.consecutiveErrors = 0;
+        state.failedPages = [];
+        state.isRunning = true;
+        state.isPaused = false;
+        state.isStopped = false;
+        state.zip = new JSZip();
+
+        updateProgress();
+        setStatus(`🚀▶▶ Все страницы: 1-${totalPages}`);
+        setReadingStatus('📖 Открываем книгу...');
+        animateHand('hover');
+        updateButtons();
+        addLog(`🚀▶▶ Запуск: 1-${totalPages}`);
+
+        setTimeout(downloadLoop, 1500);
+    }
+
+    // ============================================================
+    // 22. ▶ СТАРТ (С ЗАПРОСОМ)
     // ============================================================
     async function startDownload() {
         if (state.isRunning && state.isPaused) {
@@ -1342,7 +1454,7 @@
             if (ok) {
                 addLog(`✅ DRM активирован! Страниц: ${state.totalPages}`);
                 if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
-                if (state.pdfMetadata?.totalPages) previewTotalPages.textContent = state.pdfMetadata.totalPages;
+                if (state.totalPages) previewTotalPages.textContent = state.totalPages;
                 if (state.pageFormats) {
                     const jpg = state.pageFormats.filter(f => f === 'jpg').length;
                     const gif = state.pageFormats.filter(f => f === 'gif').length;
@@ -1423,7 +1535,7 @@
     }
 
     // ============================================================
-    // 22. УПРАВЛЕНИЕ
+    // 23. УПРАВЛЕНИЕ
     // ============================================================
     function stopDownload() {
         state.isStopped = true;
@@ -1461,9 +1573,10 @@
     }
 
     // ============================================================
-    // 23. ОБРАБОТЧИКИ
+    // 24. ОБРАБОТЧИКИ
     // ============================================================
     btnStart.addEventListener('click', startDownload);
+    btnStartAll.addEventListener('click', startDownloadAll);
     btnPause.addEventListener('click', pauseDownload);
     btnStop.addEventListener('click', stopDownload);
     btnGitHub.addEventListener('click', setupGitHub);
@@ -1483,10 +1596,11 @@
     });
 
     // ============================================================
-    // 24. ЭКСПОРТ
+    // 25. ЭКСПОРТ
     // ============================================================
     window.downloaderUI = {
         start: startDownload,
+        startAll: startDownloadAll,
         pause: pauseDownload,
         stop: stopDownload,
         state: state,
@@ -1513,7 +1627,7 @@
     };
 
     // ============================================================
-    // 25. ЗАГРУЗКА ИНФО О ЮЗЕРЕ
+    // 26. ЗАГРУЗКА ИНФО О ЮЗЕРЕ
     // ============================================================
     async function loadUserInfoUI() {
         const user = await fetchUserInfo();
@@ -1599,14 +1713,13 @@
     }
 
     // ============================================================
-    // 26. ИНИЦИАЛИЗАЦИЯ
+    // 27. ИНИЦИАЛИЗАЦИЯ
     // ============================================================
     async function init() {
         setStatus('⏳ Загрузка...');
         addLog(`🔍 Тип: ${pageType}`);
         addLog('🔍 Получаем данные о книге...');
 
-        // 1. Инфо о книге
         const infoLoaded = await fetchBookInfo();
         if (infoLoaded && bookInfo.pages > 0) {
             previewBookTitle.textContent = bookInfo.title;
@@ -1629,10 +1742,8 @@
             addLog('⚠️ Не удалось получить данные', true);
         }
 
-        // 2. Инфо о пользователе
         setTimeout(loadUserInfoUI, 500);
 
-        // 3. DRM
         setTimeout(async () => {
             if (state.fileId) {
                 addLog('🔓 Автоактивация DRM...');
@@ -1683,15 +1794,16 @@
             addLog('⚠️ GitHub не настроен (нажмите 🔑)');
         }
 
-        console.log(`✅ LitRes Downloader v26.0 загружен!`);
+        console.log(`✅ LitRes Downloader v27.0 загружен!`);
         console.log(`📖 ${state.bookTitle} (${state.totalPages} стр.)`);
         console.log(`🆔 Тип: ${pageType}, fileId: ${state.fileId || '(из API)'}`);
         console.log(`🔤 Шрифт: +25%`);
         console.log(`🔄 SPA-отслеживание: включено`);
+        console.log(`🎯 4 кнопки: ▶▶ Старт | ▶ Старт | ⏸ Пауза | ⏹ Стоп`);
     }
 
     // ============================================================
-    // 27. 🔄 СЛЕЖЕНИЕ ЗА СМЕНОЙ URL (SPA)
+    // 28. 🔄 SPA-ОТСЛЕЖИВАНИЕ
     // ============================================================
     let currentArtId = artId;
     let urlWatcherLock = false;
@@ -1720,13 +1832,11 @@
             artId = newArtId;
             fileId = null;
             
-            // ⏹ Стоп текущей загрузки
             if (state.autoInterval) {
                 clearTimeout(state.autoInterval);
                 state.autoInterval = null;
             }
             
-            // 🔄 Сброс state
             state.isRunning = false;
             state.isPaused = false;
             state.isStopped = true;
@@ -1743,7 +1853,6 @@
             state.directLink = null;
             state.bookInfoLoaded = false;
             
-            // 🎨 Сброс UI
             previewBookTitle.textContent = '⏳ Загрузка...';
             previewBookAuthor.textContent = '...';
             previewTotalPages.textContent = '—';
@@ -1758,7 +1867,6 @@
             readingProgressText.textContent = 'Прогресс: 0%';
             updateButtons();
             
-            // 📖 Новая книга
             addLog(`📖 Загружаем новую книгу...`);
             const ok = await fetchBookInfo();
             if (ok) {
@@ -1773,10 +1881,8 @@
                 addLog(`✅ "${bookInfo.title}" (${bookInfo.pages} стр.)`);
             }
             
-            // 👤 Инфо о юзере
             loadUserInfoUI();
             
-            // 🔓 DRM для новой книги
             if (state.fileId) {
                 addLog('🔓 Активация DRM...');
                 const drmOk = await activatePdfjs();
@@ -1806,7 +1912,6 @@
         setTimeout(() => { urlWatcherLock = false; }, 500);
     }
 
-    // Патчим history API
     const _origPushState = history.pushState;
     history.pushState = function() {
         _origPushState.apply(this, arguments);
@@ -1821,7 +1926,6 @@
     
     window.addEventListener('popstate', () => setTimeout(handleUrlChange, 700));
     
-    // Fallback — MutationObserver на title
     let lastTitle = document.title;
     setInterval(() => {
         if (document.title !== lastTitle) {
@@ -1833,7 +1937,7 @@
     console.log('🔄 Отслеживание смены книги: включено');
 
     // ============================================================
-    // 28. СТАРТ
+    // 29. СТАРТ
     // ============================================================
     init();
 
