@@ -1,56 +1,49 @@
 /**
- * LitRes Downloader v21.0
- * API + toc.js + Работа на СТРАНИЦЕ КНИГИ и ЧТЕНИЯ
- * 🛡️ Защита от покупок (антипарсинг)
- * 📦 Автоупаковка инструментов конвертера
+ * LitRes Downloader v23.0
+ * 🔥 РАБОТАЕТ ВЕЗДЕ — активация DRM на странице книги!
+ * 👤 Инфо о пользователе + подписка
+ * 🛡️ Защита от покупок
+ * 📦 Автоупаковка x64.rar
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV21() {
-    console.log('🚀 LitRes Downloader v21.0 — Страница книги + чтения + защита!');
+(function fullDownloaderV23() {
+    console.log('🚀 LitRes Downloader v23.0 — DRM-активация + подписка!');
 
     // ============================================================
-    // 🛡️ ЗАЩИТА ОТ ПОКУПОК (универсальная — по тексту + контексту)
+    // 🛡️ ЗАЩИТА ОТ ПОКУПОК
     // ============================================================
     const FORBIDDEN_TEXTS = [
-        'купить и скачать',
-        'купить и читать',
-        'купить за',
-        'купить сразу',
-        'оформить покупку',
-        'оплатить',
-        'добавить в корзину',
-        'перейти в корзину',
-        'купить в подарок',
-        'купить сейчас',
-        'приобрести',
-        'подтвердить покупку',
+        'купить и скачать', 'купить и читать', 'купить за', 'купить сразу',
+        'оформить покупку', 'оплатить', 'добавить в корзину', 'перейти в корзину',
+        'купить в подарок', 'купить сейчас', 'приобрести', 'подтвердить покупку',
         'оплатить картой'
     ];
-
     const PRICE_PATTERN = /(\d[\d\s]*\s*(₽|руб|rub|р\.))/i;
 
     function isForbiddenClick(el) {
         if (!el || !el.textContent) return false;
+        if (el.closest && el.closest('#litres_downloader_ui')) return false;
+
         const text = (el.textContent || '').trim().toLowerCase();
         for (const bad of FORBIDDEN_TEXTS) {
-            if (text === bad || text.startsWith(bad + ' ') || text.startsWith(bad + '\n')) {
-                return true;
-            }
+            if (text === bad || text.startsWith(bad + ' ') || text.startsWith(bad + '\n')) return true;
         }
+
         try {
             let parent = el.closest('div, section, article, aside, form, li, main');
-            for (let i = 0; i < 5 && parent; i++) {
-                const parentText = (parent.textContent || '').toLowerCase();
-                if (PRICE_PATTERN.test(parentText) && 
-                    (parentText.includes('купить') || parentText.includes('корзин') || parentText.includes('оплат'))) {
-                    if (el.tagName === 'BUTTON' || el.role === 'button') {
-                        return true;
-                    }
+            let maxUp = 4;
+            while (parent && maxUp > 0) {
+                if (parent.id === 'litres_downloader_ui') break;
+                const pt = (parent.textContent || '').toLowerCase();
+                if (PRICE_PATTERN.test(pt) && (pt.includes('купить') || pt.includes('корзин') || pt.includes('оплат'))) {
+                    if (el.tagName === 'BUTTON' || el.role === 'button') return true;
                 }
                 parent = parent.parentElement;
+                maxUp--;
             }
         } catch(e) {}
+
         const testid = (el.getAttribute && el.getAttribute('data-testid')) || '';
         if (testid && (
             testid.toLowerCase().includes('sale') ||
@@ -58,9 +51,8 @@
             testid.toLowerCase().includes('cart') ||
             testid.toLowerCase().includes('purchase') ||
             testid.toLowerCase().includes('payment')
-        )) {
-            return true;
-        }
+        )) return true;
+
         return false;
     }
 
@@ -76,7 +68,7 @@
     const _origAddEventListener = EventTarget.prototype.addEventListener;
     EventTarget.prototype.addEventListener = function(type, listener, options) {
         if (type === 'click' && this instanceof HTMLElement && isForbiddenClick(this)) {
-            console.warn('🛑 ЗАБЛОКИРОВАН addEventListener на кнопку покупки');
+            console.warn('🛑 ЗАБЛОКИРОВАН addEventListener');
             return;
         }
         return _origAddEventListener.apply(this, arguments);
@@ -98,8 +90,8 @@
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType === 1) {
-                    const buttons = node.matches?.('button, [role="button"], a') 
-                        ? [node] 
+                    const buttons = node.matches?.('button, [role="button"], a')
+                        ? [node]
                         : Array.from(node.querySelectorAll?.('button, [role="button"], a') || []);
                     for (const btn of buttons) {
                         if (isForbiddenClick(btn)) {
@@ -113,7 +105,6 @@
         }
     });
     observer.observe(document.body, { childList: true, subtree: true });
-
     console.log('🛡️ Защита от покупок активна!');
 
     // ============================================================
@@ -157,9 +148,7 @@
         const encoded = encoder.encode(jsonString);
         let binary = '';
         const bytes = new Uint8Array(encoded);
-        for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         const content = btoa(binary);
         try {
             let sha = '';
@@ -203,12 +192,9 @@
                 const file = await resp.json();
                 const binary = atob(file.content);
                 const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) {
-                    bytes[i] = binary.charCodeAt(i);
-                }
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
                 const decoder = new TextDecoder('utf-8');
-                const jsonString = decoder.decode(bytes);
-                return JSON.parse(jsonString);
+                return JSON.parse(decoder.decode(bytes));
             }
         } catch(e) {
             console.warn('⚠️ Прогресс не найден:', e);
@@ -217,23 +203,18 @@
     }
 
     // ============================================================
-    // 3. ПОДКЛЮЧАЕМ JSZip
+    // 3. JSZip
     // ============================================================
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
     document.head.appendChild(script);
 
     let JSZipLoaded = false;
-    script.onload = () => {
-        JSZipLoaded = true;
-        console.log('✅ JSZip загружен!');
-    };
-    script.onerror = () => {
-        alert('❌ Не удалось загрузить JSZip. Проверьте интернет.');
-    };
+    script.onload = () => { JSZipLoaded = true; console.log('✅ JSZip загружен!'); };
+    script.onerror = () => { alert('❌ Не удалось загрузить JSZip.'); };
 
     // ============================================================
-    // 4. ОПРЕДЕЛЯЕМ ТИП СТРАНИЦЫ (reader / book)
+    // 4. ТИП СТРАНИЦЫ
     // ============================================================
     const urlParams = new URLSearchParams(window.location.search);
     let fileId = urlParams.get('file');
@@ -254,14 +235,13 @@
     }
 
     if (!artId) {
-        alert('❌ Не удалось определить ID книги!\nОткройте страницу книги или чтения.');
+        alert('❌ Не удалось определить ID книги!');
         return;
     }
-
-    console.log(`🆔 artId: ${artId}, fileId: ${fileId || '(получим из API)'}`);
+    console.log(`🆔 artId: ${artId}, fileId: ${fileId || '(из API)'}`);
 
     // ============================================================
-    // 5. РАБОТА С СЕССИЕЙ
+    // 5. СЕССИЯ
     // ============================================================
     function getCookie(name) {
         const value = `; ${document.cookie}`;
@@ -285,18 +265,21 @@
 
     function getHeaders() {
         return {
-            'accept': '*/*',
+            'accept': 'application/json, text/plain, */*',
             'accept-language': 'ru,en;q=0.9',
+            'accept-version': '2',
             'app-id': '115',
             'client-host': 'www.litres.ru',
             'session-id': sessionData.sessionId,
             'supersid': sessionData.supersid,
-            'ui-language-code': 'ru'
+            'ui-currency': 'RUB',
+            'ui-language-code': 'ru',
+            'x-request-id': Date.now().toString(36) + Math.random().toString(36).substring(2)
         };
     }
 
     // ============================================================
-    // 6. ОПРЕДЕЛЯЕМ КНИГУ ЧЕРЕЗ API
+    // 6. API-ОПРЕДЕЛЕНИЕ КНИГИ
     // ============================================================
     let bookInfo = {
         title: 'Неизвестная книга',
@@ -310,78 +293,44 @@
 
     async function fetchBookInfo() {
         try {
-            console.log('🔍 Запрашиваем информацию о книге через API...');
+            console.log('🔍 Запрашиваем информацию о книге...');
             const resp = await fetch(
                 `https://api.litres.ru/foundation/api/arts/${artId}`,
-                {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: getHeaders()
-                }
+                { method: 'GET', credentials: 'include', headers: getHeaders() }
             );
-
-            if (!resp.ok) {
-                console.warn(`⚠️ API вернул ${resp.status}`);
-                return false;
-            }
-
+            if (!resp.ok) return false;
             const data = await resp.json();
             const payload = data?.payload?.data;
-
-            if (!payload) {
-                console.warn('⚠️ Нет данных в ответе API');
-                return false;
-            }
+            if (!payload) return false;
 
             let pages = 0;
-            let symbols = payload.symbols_count || 0;
-
+            const symbols = payload.symbols_count || 0;
             if (payload.files && payload.files.length > 0) {
                 const mainFile = payload.files.find(f => !f.is_additional);
-                if (mainFile && mainFile.pages) {
-                    pages = mainFile.pages;
-                }
+                if (mainFile && mainFile.pages) pages = mainFile.pages;
             }
-
             if (!pages && payload.additional_info?.current_pages_or_seconds) {
                 pages = payload.additional_info.current_pages_or_seconds;
             }
-
-            if (!pages && symbols > 0) {
-                pages = Math.round(symbols / 2800);
-            }
-
+            if (!pages && symbols > 0) pages = Math.round(symbols / 2800);
             if (!pages && payload.release_file_id) {
                 try {
                     const fileResp = await fetch(
                         `https://api.litres.ru/foundation/api/arts/files/${payload.release_file_id}/info`,
-                        {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: getHeaders()
-                        }
+                        { method: 'GET', credentials: 'include', headers: getHeaders() }
                     );
                     if (fileResp.ok) {
                         const fileData = await fileResp.json();
-                        if (fileData?.payload?.data?.pages) {
-                            pages = fileData.payload.data.pages;
-                        }
+                        if (fileData?.payload?.data?.pages) pages = fileData.payload.data.pages;
                     }
                 } catch(e) {}
             }
-
-            if (!pages) {
-                pages = symbols > 0 ? Math.round(symbols / 2800) : 0;
-            }
+            if (!pages) pages = symbols > 0 ? Math.round(symbols / 2800) : 0;
 
             let author = 'Неизвестный автор';
             if (payload.persons && payload.persons.length > 0) {
-                const authorPerson = payload.persons.find(p => p.role === 'author');
-                if (authorPerson) {
-                    author = authorPerson.full_name || author;
-                } else {
-                    author = payload.persons[0].full_name || author;
-                }
+                const ap = payload.persons.find(p => p.role === 'author');
+                author = ap?.full_name || payload.persons[0].full_name || author;
             }
 
             bookInfo.title = payload.title || 'Неизвестная книга';
@@ -392,409 +341,433 @@
             bookInfo.artId = payload.id || artId;
             bookInfo.source = 'API LitRes';
 
-            console.log(`✅ Книга: "${bookInfo.title}"`);
-            console.log(`✍️ Автор: ${bookInfo.author}`);
-            console.log(`📄 Страниц: ${bookInfo.pages}`);
-            console.log(`📝 Символов: ${bookInfo.symbols}`);
+            console.log(`✅ Книга: "${bookInfo.title}" (${bookInfo.pages} стр.)`);
             console.log(`🆔 fileId: ${bookInfo.fileId}`);
-
             return true;
-
         } catch(e) {
-            console.error('❌ Ошибка получения информации:', e);
+            console.error('❌ Ошибка:', e);
             return false;
         }
     }
 
     // ============================================================
-    // 7. ПОИСК toc.js
+    // 7. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ И ПОДПИСКЕ
     // ============================================================
-    async function findTocLink() {
-        const fid = bookInfo.fileId || fileId;
-        if (!fid) return null;
+    async function fetchUserInfo() {
         try {
             const resp = await fetch(
-                `https://api.litres.ru/foundation/api/arts/files/${fid}/link?resource=toc.js&is_trial=false`,
-                {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: getHeaders()
-                }
+                `https://api.litres.ru/foundation/api/users/me/detailed`,
+                { method: 'GET', credentials: 'include', headers: getHeaders() }
             );
             if (!resp.ok) return null;
             const data = await resp.json();
-            const url = data?.payload?.data?.link || data?.payload?.link || data?.data?.link || data?.link;
-            if (url && url.includes('toc.js')) {
-                return url;
-            }
-            return null;
+            const p = data?.payload?.data;
+            if (!p) return null;
+
+            const sub = p.subscription || {};
+            const acc = p.account || {};
+
+            return {
+                id: p.id,
+                login: p.login,
+                subscription: sub.is_active ? {
+                    isTrial: sub.is_trial_period,
+                    validTill: sub.valid_till,
+                    price: sub.price,
+                    planName: sub.plan_name || null,
+                    autoRenew: sub.prolongation_status === 'enabled'
+                } : null,
+                account: {
+                    display: acc.display || 0,
+                    bonus: acc.bonus || 0
+                },
+                basket: p.basket || { items_count: 0 }
+            };
         } catch(e) {
+            console.warn('⚠️ Инфо о пользователе:', e);
             return null;
         }
     }
 
     // ============================================================
-    // 8. ПОИСК ПРЯМОЙ ZIP-ССЫЛКИ
+    // 8. 🔥 АКТИВАЦИЯ PDF.js (открывает DRM!)
+    // ============================================================
+    async function activatePdfjs() {
+        if (!state.fileId) return false;
+        
+        try {
+            console.log('🔓 Активация PDF.js (index=1)...');
+            
+            // 1. Запрос index=1 — активирует DRM
+            const resp = await fetch(
+                `https://api.litres.ru/foundation/api/arts/files/${state.fileId}/link?index=1&is_trial=false`,
+                { method: 'GET', credentials: 'include', headers: getHeaders() }
+            );
+            
+            if (!resp.ok) {
+                console.warn(`⚠️ Активация: ${resp.status}`);
+                return false;
+            }
+            
+            const data = await resp.json();
+            const jsUrl = data?.payload?.data?.link || data?.payload?.link;
+            if (!jsUrl) return false;
+            
+            console.log('📥 Скачиваем метаданные PDF.js...');
+            
+            // 2. Скачиваем .js
+            const jsResp = await fetch(jsUrl, { credentials: 'omit' });
+            if (!jsResp.ok) return false;
+            
+            const jsText = await jsResp.text();
+            
+            // 3. 🔥 ИСПРАВЛЕННЫЙ парсинг: находим от первой { до последней }
+            const firstBrace = jsText.indexOf('{');
+            const lastBrace = jsText.lastIndexOf('}');
+            
+            if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+                console.warn('⚠️ Не найдены { } в метаданных');
+                return false;
+            }
+            
+            const jsonStr = jsText.substring(firstBrace, lastBrace + 1);
+            
+            let pdfData;
+            try {
+                pdfData = JSON.parse(jsonStr);
+            } catch(e) {
+                console.warn('⚠️ Ошибка JSON:', e.message);
+                console.warn('📄 Первые 200 символов:', jsonStr.substring(0, 200));
+                return false;
+            }
+            
+            const pagesArr = pdfData.pages?.[0]?.p || [];
+            
+            state.pdfMetadata = {
+                title: pdfData.Meta?.Title,
+                authors: pdfData.Meta?.Authors || [],
+                uuid: pdfData.Meta?.UUID,
+                totalPages: pagesArr.length,
+                width: pdfData.pages?.[0]?.w,
+                height: pdfData.pages?.[0]?.h,
+                pageFormats: pagesArr.map(p => p.ext || 'jpg')
+            };
+            
+            state.totalPages = state.pdfMetadata.totalPages;
+            state.pageFormats = state.pdfMetadata.pageFormats;
+            state.drmActivated = true;
+            
+            console.log(`✅ DRM активирован! Страниц: ${state.pdfMetadata.totalPages}`);
+            console.log(`🖼️ Формат 1-й: ${state.pageFormats[0]}`);
+            return true;
+            
+        } catch(e) {
+            console.error('❌ Ошибка активации:', e);
+            return false;
+        }
+    }
+    
+
+    // ============================================================
+    // 9. ПОИСК ZIP-ССЫЛКИ
     // ============================================================
     async function findZipLink() {
-        const fid = bookInfo.fileId || fileId;
+        const fid = state.fileId || bookInfo.fileId;
         if (!fid) return null;
-
         const endpoints = [
             `https://api.litres.ru/foundation/api/arts/files/${fid}/link?is_trial=false`,
-            `https://api.litres.ru/foundation/api/arts/files/${fid}/link?resource=bin&is_trial=false`,
-            `https://api.litres.ru/foundation/api/arts/files/${fid}/link?resource=zip&is_trial=false`
+            `https://api.litres.ru/foundation/api/arts/files/${fid}/link?resource=bin&is_trial=false`
         ];
-
         for (const url of endpoints) {
             try {
-                const resp = await fetch(url, {
-                    method: 'GET', credentials: 'include', headers: getHeaders()
-                });
+                const resp = await fetch(url, { method: 'GET', credentials: 'include', headers: getHeaders() });
                 if (!resp.ok) continue;
                 const data = await resp.json();
                 const link = data?.payload?.data?.link || data?.payload?.link || data?.data?.link || data?.link;
-                if (link && (link.includes('.bin') || link.includes('application/zip'))) {
-                    console.log(`✅ ZIP-ссылка найдена`);
-                    return link;
-                }
+                if (link && (link.includes('.bin') || link.includes('application/zip'))) return link;
             } catch(e) {}
         }
         return null;
     }
 
     // ============================================================
-    // 9. ЗАГРУЗКА ИНСТРУМЕНТОВ (x64.rar)
+    // 10. ИНСТРУМЕНТЫ
     // ============================================================
     let toolsBlob = null;
-
     async function downloadTools() {
-        if (toolsBlob) {
-            console.log('✅ Инструменты в кэше');
-            return toolsBlob;
-        }
-        console.log('📥 Скачиваем x64.rar...');
+        if (toolsBlob) return toolsBlob;
         try {
             const resp = await fetch(TOOLS_URL, { credentials: 'omit' });
-            if (!resp.ok) {
-                console.warn(`⚠️ Не удалось скачать: ${resp.status}`);
-                return null;
-            }
+            if (!resp.ok) return null;
             toolsBlob = await resp.blob();
-            console.log(`✅ Инструменты: ${(toolsBlob.size / 1024 / 1024).toFixed(2)} MB`);
             return toolsBlob;
-        } catch(e) {
-            console.warn('⚠️ Ошибка загрузки:', e.message);
-            return null;
-        }
+        } catch(e) { return null; }
     }
 
     // ============================================================
-    // 10. UI
+    // 11. UI
     // ============================================================
-    const uiHTML = `
+      const uiHTML = `
         <div id="litres_downloader_ui" style="
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 16px;
+            right: 16px;
             z-index: 99999;
             background: #ffffff;
             color: #1a2a4a;
-            border-radius: 20px;
-            padding: 24px 28px;
-            font-family: 'Segoe UI', -apple-system, Arial, sans-serif;
-            font-size: 14px;
-            min-width: 380px;
-            max-width: 440px;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 12px;
+            width: 340px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
             border: 1px solid rgba(26, 42, 74, 0.08);
             user-select: none;
         ">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="32" height="32" rx="8" fill="#1a3a6a"/>
-                    <path d="M16 4L4 12v8l12 8 12-8v-8L16 4z" stroke="#ffffff" stroke-width="2" fill="none"/>
-                    <path d="M10 12v8l6 4 6-4v-8l-6-4-6 4z" fill="#ffffff" opacity="0.9"/>
-                    <circle cx="16" cy="16" r="4" fill="#1a3a6a"/>
-                    <path d="M12 16l4-4 4 4-4 4-4-4z" fill="#ffffff"/>
-                </svg>
-                <div>
-                    <div style="font-weight: 800; font-size: 18px; color: #1a2a4a; letter-spacing: -0.5px; line-height: 1.2;">
-                        📚 LitRes <span style="color: #1a5a9a;">Downloader</span>
+            <!-- ЗАГОЛОВОК -->
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <div style="font-size: 20px;">📚</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 800; font-size: 14px; line-height: 1.1;">
+                        LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
-                    <div style="font-size: 10px; color: #6a8aaa; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600;">
-                        📦 v21.0 — Страница книги + чтения
+                    <div style="font-size: 9px; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
+                        v23.0 • DRM
                     </div>
                 </div>
                 <button id="close_ui" style="
-                    margin-left: auto;
-                    background: rgba(26, 42, 74, 0.05);
+                    background: rgba(26,42,74,0.05);
                     border: none;
                     color: #8a9aaa;
                     cursor: pointer;
-                    font-size: 18px;
-                    padding: 4px 8px;
-                    border-radius: 8px;
+                    font-size: 14px;
+                    padding: 3px 7px;
+                    border-radius: 6px;
                 ">✕</button>
             </div>
 
+            <!-- КНИГА + ЮЗЕР (объединено, компактно) -->
             <div style="
                 background: #f0f7ff;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
-                border-left: 4px solid #1a5a9a;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
+                border-left: 3px solid #1a5a9a;
+                font-size: 11px;
+                line-height: 1.4;
             ">
-                <div style="font-weight: 700; font-size: 14px; color: #1a2a4a; margin-bottom: 4px;">
-                    📖 <span id="preview_book_title">${bookInfo.title}</span>
+                <div style="font-weight: 700; color: #1a2a4a; margin-bottom: 2px;" id="preview_book_title">
+                    ${bookInfo.title}
                 </div>
-                <div style="font-size: 12px; color: #4a6a8a;">
+                <div style="color: #4a6a8a;">
                     ✍️ <span id="preview_book_author">${bookInfo.author}</span>
+                    • 📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр.
+                    • 🖼️ <span id="preview_formats">—</span>
                 </div>
-                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
-                    📄 Страниц: <span id="preview_total_pages">${bookInfo.pages || 'определяется...'}</span>
-                </div>
-                <div style="font-size: 12px; color: #4a6a8a; margin-top: 4px;">
-                    ☁️ GitHub: <span id="github_status" style="color: #1a5a9a;">не настроен</span>
-                </div>
-                <div style="font-size: 10px; color: #8a9aaa; margin-top: 4px; border-top: 1px solid #e8eef4; padding-top: 4px;">
-                    📡 Источник: <span id="book_source">${bookInfo.source}</span> • Тип: <span id="page_type_label">${pageType}</span>
-                </div>
-                <div style="font-size: 11px; color: #27ae60; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8eef4;">
-                    🛡️ Защита от покупок активна
-                </div>
-                <div style="font-size: 11px; color: #27ae60; margin-top: 4px;">
-                    📦 Инструменты будут добавлены в архив
+                <div style="color: #6a8aaa; font-size: 10px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed #d4e2f0;">
+                    <span id="user_info_text">👤 Загрузка...</span>
                 </div>
             </div>
 
+            <!-- БАЛАНС (только если есть) -->
+            <div id="account_block" style="
+                background: #fff8e8;
+                border-radius: 6px;
+                padding: 5px 8px;
+                margin-bottom: 8px;
+                border: 1px solid #f0e0b8;
+                font-size: 10px;
+                color: #6a5a2a;
+                display: none;
+            "></div>
+
+            <!-- ZIP ССЫЛКА -->
             <div id="direct_links_container" style="
                 background: #f8fafc;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
+                border-radius: 6px;
+                padding: 6px 8px;
+                margin-bottom: 8px;
                 border: 1px solid #e8eef4;
                 display: none;
+                font-size: 10px;
             ">
-                <div style="font-weight: 600; font-size: 13px; color: #1a2a4a; margin-bottom: 8px;">
-                    📦 Прямая ссылка на книгу (ZIP):
-                </div>
                 <div id="direct_links_list"></div>
-                <div style="font-size: 11px; color: #6a8aaa; margin-top: 8px;">
-                    💡 Нажмите на ссылку, чтобы скачать ZIP-файл
-                </div>
             </div>
 
+            <!-- СТАТУС + ПРОГРЕСС -->
             <div style="
                 background: #f0f4fa;
-                border-radius: 12px;
-                padding: 12px 16px;
-                margin-bottom: 14px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                min-height: 60px;
+                border-radius: 8px;
+                padding: 8px 10px;
+                margin-bottom: 8px;
             ">
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                     <div id="hand_animation" style="
-                        font-size: 32px;
-                        transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
-                        transform: translateX(0) rotate(0deg);
-                        width: 48px;
+                        font-size: 20px;
+                        width: 28px;
                         text-align: center;
-                    ">
-                        🖐️
-                    </div>
-                    <div style="flex: 1;">
+                        transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+                    ">🖐️</div>
+                    <div style="flex: 1; min-width: 0;">
                         <div id="reading_status" style="
                             font-weight: 600;
-                            font-size: 14px;
-                            color: #1a2a4a;
-                        ">
-                            📖 Готов к чтению
-                        </div>
+                            font-size: 11px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        ">📖 Готов</div>
                         <div id="reading_progress_text" style="
-                            font-size: 12px;
+                            font-size: 10px;
                             color: #6a8aaa;
-                        ">
-                            Прогресс: 0%
-                        </div>
+                        ">Прогресс: 0%</div>
                     </div>
                     <div id="page_counter" style="
-                        font-size: 20px;
+                        font-size: 14px;
                         font-weight: 700;
                         color: #1a5a9a;
-                        min-width: 50px;
-                        text-align: right;
-                    ">
-                        0/0
-                    </div>
+                    ">0/0</div>
                 </div>
-                <div id="log_status" style="
-                    font-size: 11px;
-                    color: #6a8aaa;
-                    background: #e8eef4;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    max-height: 60px;
-                    overflow-y: auto;
-                    font-family: 'Courier New', monospace;
-                ">
-                    ⏳ Загрузка информации о книге...
-                </div>
-            </div>
 
-            <div style="margin-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a6a8a; margin-bottom: 6px;">
-                    <span id="progress_text">📥 Страниц: 0 из 0</span>
-                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
-                </div>
                 <div style="
                     width: 100%;
-                    height: 8px;
+                    height: 6px;
                     background: #e8eef4;
-                    border-radius: 4px;
+                    border-radius: 3px;
                     overflow: hidden;
+                    margin-bottom: 6px;
                 ">
                     <div id="progress_bar" style="
                         width: 0%;
                         height: 100%;
                         background: linear-gradient(90deg, #1a5a9a, #4a8af4);
-                        border-radius: 4px;
-                        transition: width 0.6s ease;
+                        border-radius: 3px;
+                        transition: width 0.4s ease;
                     "></div>
                 </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6a8aaa; margin-bottom: 4px;">
+                    <span id="progress_text">📥 0 из 0</span>
+                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
+                </div>
+
+                <div id="log_status" style="
+                    font-size: 10px;
+                    color: #6a8aaa;
+                    background: #e8eef4;
+                    padding: 3px 6px;
+                    border-radius: 4px;
+                    max-height: 42px;
+                    overflow-y: auto;
+                    font-family: 'Courier New', monospace;
+                    line-height: 1.3;
+                ">⏳ Загрузка...</div>
             </div>
 
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+            <!-- КНОПКИ -->
+            <div style="display: flex; gap: 4px; margin-bottom: 6px;">
                 <button id="btn_github" style="
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #24292e;
-                    color: #ffffff;
+                    color: #fff;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    transition: all 0.2s;
-                    min-width: 70px;
-                ">🔑 GitHub</button>
+                    font-size: 11px;
+                ">🔑</button>
 
                 <button id="btn_start" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #1a3a6a;
-                    color: #ffffff;
+                    color: #fff;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    transition: all 0.2s;
-                    min-width: 70px;
-                    box-shadow: 0 4px 12px rgba(26, 58, 106, 0.2);
+                    font-size: 11px;
                 ">▶ Старт</button>
 
                 <button id="btn_pause" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #e8eef4;
                     color: #6a8aaa;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    transition: all 0.2s;
-                    min-width: 70px;
-                ">⏸ Пауза</button>
+                    font-size: 11px;
+                ">⏸</button>
 
                 <button id="btn_stop" style="
                     flex: 1;
-                    padding: 10px 12px;
+                    padding: 6px 8px;
                     background: #f0f2f4;
                     color: #8a9aaa;
                     border: 1px solid #dce2e8;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     cursor: pointer;
                     font-weight: 700;
-                    font-size: 13px;
-                    transition: all 0.2s;
-                    min-width: 70px;
-                ">⏹ Стоп</button>
+                    font-size: 11px;
+                ">⏹</button>
             </div>
 
+            <!-- FORCE -->
             <div style="
                 display: flex;
                 align-items: center;
-                gap: 10px;
-                padding: 8px 12px;
+                gap: 6px;
+                padding: 5px 8px;
                 background: #f8faff;
-                border-radius: 10px;
+                border-radius: 6px;
                 border: 1px solid #e8eef4;
-                margin-bottom: 12px;
+                margin-bottom: 6px;
+                font-size: 11px;
             ">
-                <label style="
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    cursor: pointer;
-                    font-weight: 600;
-                    font-size: 13px;
-                    color: #1a2a4a;
-                ">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
                     <input type="checkbox" id="force_mode" style="
-                        width: 18px;
-                        height: 18px;
+                        width: 14px;
+                        height: 14px;
                         accent-color: #e74c3c;
                         cursor: pointer;
                     ">
-                    ⚡ FORCE-режим
-                    <span style="
-                        font-size: 10px;
-                        color: #8a9aaa;
-                        font-weight: 400;
-                    ">(без пауз)</span>
+                    ⚡ FORCE
                 </label>
                 <div id="force_status" style="
                     margin-left: auto;
-                    font-size: 11px;
+                    font-size: 10px;
                     color: #8a9aaa;
                     background: #e8eef4;
-                    padding: 2px 10px;
-                    border-radius: 12px;
-                ">
-                    ⏸ выкл
-                </div>
+                    padding: 1px 6px;
+                    border-radius: 8px;
+                ">⏸ выкл</div>
             </div>
 
+            <!-- ФИНАЛЬНЫЙ СТАТУС -->
             <div id="status_text" style="
-                font-size: 12px;
+                font-size: 10px;
                 color: #6a8aaa;
                 text-align: center;
-                padding: 8px 0 4px;
+                padding: 4px 0 2px;
                 border-top: 1px solid #e8eef4;
-                min-height: 22px;
-            ">
-                ⏳ Загрузка информации о книге...
-            </div>
+                min-height: 16px;
+            ">⏳ Загрузка...</div>
 
             <div id="zip_info" style="
-                font-size: 11px;
+                font-size: 10px;
                 color: #8aaaac;
                 text-align: center;
-                margin-top: 4px;
+                margin-top: 2px;
                 display: none;
-            ">
-                📦 Архивация...
-            </div>
+            ">📦 Архивация...</div>
         </div>
     `;
 
     document.body.insertAdjacentHTML('beforeend', uiHTML);
 
     // ============================================================
-    // 11. ПОЛУЧАЕМ ЭЛЕМЕНТЫ
+    // 12. ЭЛЕМЕНТЫ
     // ============================================================
     const ui = document.getElementById('litres_downloader_ui');
     const closeBtn = document.getElementById('close_ui');
@@ -812,18 +785,20 @@
     const readingProgressText = document.getElementById('reading_progress_text');
     const pageCounter = document.getElementById('page_counter');
     const logStatus = document.getElementById('log_status');
-    const githubStatus = document.getElementById('github_status');
     const previewTotalPages = document.getElementById('preview_total_pages');
     const previewBookTitle = document.getElementById('preview_book_title');
     const previewBookAuthor = document.getElementById('preview_book_author');
+    const previewFormats = document.getElementById('preview_formats');
     const bookSource = document.getElementById('book_source');
     const directLinksContainer = document.getElementById('direct_links_container');
     const directLinksList = document.getElementById('direct_links_list');
     const forceMode = document.getElementById('force_mode');
     const forceStatus = document.getElementById('force_status');
+    const userInfoText = document.getElementById('user_info_text');
+    const accountBlock = document.getElementById('account_block');
 
     // ============================================================
-    // 12. СОСТОЯНИЕ
+    // 13. СОСТОЯНИЕ
     // ============================================================
     let state = {
         isRunning: false,
@@ -846,36 +821,32 @@
         lastSaveTime: 0,
         forceMode: false,
         bookInfoLoaded: false,
-        directLink: null
+        directLink: null,
+        pdfMetadata: null,
+        pageFormats: null,
+        drmActivated: false
     };
 
     // ============================================================
-    // 13. ОБНОВЛЕНИЕ ЗАГОЛОВКА ВКЛАДКИ
+    // 14. ОБНОВЛЕНИЕ ЗАГОЛОВКА
     // ============================================================
     function updateTabTitle() {
         try {
             const percent = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
-            const shortTitle = state.bookTitle.length > 25 ? state.bookTitle.substring(0, 25) + '...' : state.bookTitle;
-            
-            if (state.isRunning && state.downloaded > 0) {
-                document.title = `[${percent}%] ${shortTitle}`;
-            } else if (state.isRunning && state.downloaded === 0) {
-                document.title = `⏳ ${shortTitle}`;
-            } else if (state.downloaded === state.total && state.total > 0) {
-                document.title = `✅ ${shortTitle}`;
-            } else {
-                document.title = shortTitle;
-            }
+            const short = state.bookTitle.length > 25 ? state.bookTitle.substring(0, 25) + '...' : state.bookTitle;
+            if (state.isRunning && state.downloaded > 0) document.title = `[${percent}%] ${short}`;
+            else if (state.isRunning) document.title = `⏳ ${short}`;
+            else if (state.downloaded === state.total && state.total > 0) document.title = `✅ ${short}`;
+            else document.title = short;
         } catch(e) {}
     }
 
     // ============================================================
-    // 14. UI-ФУНКЦИИ
+    // 15. UI-ФУНКЦИИ
     // ============================================================
     function addLog(text, isError = false) {
         const time = new Date().toLocaleTimeString();
-        const prefix = isError ? '❌' : 'ℹ️';
-        logStatus.textContent = `${prefix} [${time}] ${text}`;
+        logStatus.textContent = `${isError ? '❌' : 'ℹ️'} [${time}] ${text}`;
         console.log(`[LOG] ${text}`);
         logStatus.style.color = isError ? '#e74c3c' : '#6a8aaa';
     }
@@ -886,71 +857,38 @@
         addLog(text, isError);
     }
 
-    function setReadingStatus(text) {
-        readingStatus.textContent = text;
-    }
+    function setReadingStatus(text) { readingStatus.textContent = text; }
 
-    // ============================================================
-    // 15. АНИМАЦИЯ РУКИ
-    // ============================================================
     function animateHand(action) {
         if (action === 'turn') {
             handAnimation.style.transform = 'translateX(30px) rotate(20deg)';
-            setTimeout(() => {
-                handAnimation.style.transform = 'translateX(-10px) rotate(-10deg)';
-            }, 400);
-            setTimeout(() => {
-                handAnimation.style.transform = 'translateX(0) rotate(0deg)';
-            }, 800);
+            setTimeout(() => handAnimation.style.transform = 'translateX(-10px) rotate(-10deg)', 400);
+            setTimeout(() => handAnimation.style.transform = 'translateX(0) rotate(0deg)', 800);
         } else if (action === 'hover') {
             handAnimation.style.transform = 'translateX(10px) scale(1.1)';
-            setTimeout(() => {
-                handAnimation.style.transform = 'translateX(0) scale(1)';
-            }, 600);
+            setTimeout(() => handAnimation.style.transform = 'translateX(0) scale(1)', 600);
         } else if (action === 'wait') {
             handAnimation.style.transform = 'rotate(-5deg)';
-            setTimeout(() => {
-                handAnimation.style.transform = 'rotate(5deg)';
-            }, 500);
-            setTimeout(() => {
-                handAnimation.style.transform = 'rotate(0deg)';
-            }, 1000);
+            setTimeout(() => handAnimation.style.transform = 'rotate(5deg)', 500);
+            setTimeout(() => handAnimation.style.transform = 'rotate(0deg)', 1000);
         }
     }
 
-    // ============================================================
-    // 16. ПАУЗЫ
-    // ============================================================
     function getReadingDelay() {
-        if (state.forceMode) {
-            return Math.random() * 300 + 200;
-        }
-        const baseDelay = Math.random() * 5000 + 3000;
-        if (Math.random() < 0.15) {
-            return baseDelay + Math.random() * 10000 + 5000;
-        }
-        if (Math.random() < 0.1) {
-            return Math.random() * 1000 + 500;
-        }
-        return baseDelay;
+        if (state.forceMode) return Math.random() * 300 + 200;
+        const base = Math.random() * 5000 + 3000;
+        if (Math.random() < 0.15) return base + Math.random() * 10000 + 5000;
+        if (Math.random() < 0.1) return Math.random() * 1000 + 500;
+        return base;
     }
 
     function getRandomPause() {
-        if (state.forceMode) {
-            return Math.random() * 200 + 100;
-        }
-        if (Math.random() < 0.2) {
-            return Math.random() * 10000 + 5000;
-        }
-        if (Math.random() < 0.1) {
-            return Math.random() * 30000 + 15000;
-        }
+        if (state.forceMode) return Math.random() * 200 + 100;
+        if (Math.random() < 0.2) return Math.random() * 10000 + 5000;
+        if (Math.random() < 0.1) return Math.random() * 30000 + 15000;
         return Math.random() * 3000 + 1000;
     }
 
-    // ============================================================
-    // 17. ПРОГРЕСС
-    // ============================================================
     function updateProgress() {
         const percent = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
         progressBar.style.width = `${Math.min(percent, 100)}%`;
@@ -1005,14 +943,11 @@
     }
 
     // ============================================================
-    // 18. GITHUB-ПРОГРЕСС
+    // 16. GITHUB-ПРОГРЕСС
     // ============================================================
     async function saveProgress() {
         if (!state.zip || state.downloaded === 0) return;
-        if (!GITHUB_CONFIG.token) {
-            githubStatus.textContent = '⚠️ нет токена';
-            return;
-        }
+        if (!GITHUB_CONFIG.token) { return; }
         const now = Date.now();
         if (now - state.lastSaveTime < 30000) return;
         state.lastSaveTime = now;
@@ -1032,46 +967,22 @@
             last_update: new Date().toISOString()
         };
 
-        githubStatus.textContent = '⏳ сохраняю...';
         const success = await saveProgressToGitHub(state.artId, progressData);
-        githubStatus.textContent = success ? '✅ сохранён' : '❌ ошибка';
-        if (success) {
-            addLog(`💾 Прогресс сохранён на GitHub (${state.downloaded}/${state.total})`);
-        }
-    }
-
-    async function loadProgress() {
-        if (!GITHUB_CONFIG.token) {
-            githubStatus.textContent = '⚠️ нет токена';
-            return null;
-        }
-        githubStatus.textContent = '⏳ загрузка...';
-        const data = await loadProgressFromGitHub(state.artId);
-        if (data) {
-            githubStatus.textContent = `✅ ${data.downloaded_pages}/${data.total_pages}`;
-            addLog(`📖 Загружен прогресс: ${data.downloaded_pages}/${data.total_pages}`);
-            return data;
-        } else {
-            githubStatus.textContent = '❌ не найден';
-            return null;
-        }
+        if (success) addLog(`💾 Прогресс сохранён (${state.downloaded}/${state.total})`);
     }
 
     async function checkForSavedProgress() {
         if (!GITHUB_CONFIG.token) {
             const hasToken = askForGitHubToken();
-            if (!hasToken) {
-                addLog('⚠️ GitHub токен не указан', true);
-                return false;
-            }
+            if (!hasToken) return false;
         }
-        const progress = await loadProgress();
+        const progress = await loadProgressFromGitHub(state.artId);
         if (progress && progress.downloaded_pages > 0 && progress.downloaded_pages < progress.total_pages) {
             const resume = confirm(
                 `📖 Найдено сохранение для "${progress.book_title}"\n\n` +
                 `📄 Страниц: ${progress.downloaded_pages} из ${progress.total_pages}\n` +
-                `📅 Последнее обновление: ${new Date(progress.last_update).toLocaleString()}\n\n` +
-                `Продолжить с того же места?`
+                `📅 ${new Date(progress.last_update).toLocaleString()}\n\n` +
+                `Продолжить?`
             );
             if (resume) {
                 state.downloaded = progress.downloaded_pages;
@@ -1082,7 +993,6 @@
                 state.zip = new JSZip();
                 updateProgress();
                 setStatus(`📖 Продолжаем с ${state.downloaded + 1} страницы...`);
-                addLog(`🔄 Восстановлен прогресс: ${state.downloaded}/${state.total}`);
                 state.isRunning = true;
                 state.isPaused = false;
                 state.isStopped = false;
@@ -1095,85 +1005,48 @@
     }
 
     // ============================================================
-    // 19. ПОКАЗ ПРЯМОЙ ССЫЛКИ
+    // 17. ПОКАЗ ПРЯМОЙ ССЫЛКИ
     // ============================================================
     function showDirectLink(url) {
         directLinksContainer.style.display = 'block';
+        const exp = (() => { try { const m = url.match(/expires=(\d+)/); return m ? new Date(parseInt(m[1]) * 1000) : null; } catch(e) { return null; } })();
         directLinksList.innerHTML = `
-            <div style="
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                background: #ffffff;
-                border-radius: 6px;
-                padding: 6px 10px;
-                border: 1px solid #e8eef4;
-            ">
-                <span style="font-size: 12px; font-weight: 600; min-width: 80px; color: #1a5a9a;">📦 ZIP</span>
-                <a href="${url}" target="_blank" style="
-                    flex: 1;
-                    font-size: 11px;
-                    color: #1a5a9a;
-                    text-decoration: none;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    padding: 4px 8px;
-                    background: #f0f7ff;
-                    border-radius: 4px;
-                ">${url.substring(0, 60)}...</a>
-                <button onclick="navigator.clipboard.writeText('${url}')" style="
-                    background: #e8eef4;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    cursor: pointer;
-                    font-size: 12px;
-                    color: #1a2a4a;
-                ">📋</button>
+            <div style="display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 6px; padding: 6px 10px; border: 1px solid #e8eef4;">
+                <span style="font-size: 12px; font-weight: 600; min-width: 60px; color: #1a5a9a;">📦 ZIP</span>
+                <a href="${url}" target="_blank" style="flex: 1; font-size: 11px; color: #1a5a9a; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 8px; background: #f0f7ff; border-radius: 4px;">${url.substring(0, 60)}...</a>
+                <button onclick="navigator.clipboard.writeText('${url}')" style="background: #e8eef4; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;">📋</button>
             </div>
+            ${exp ? `<div style="font-size: 10px; color: ${(exp.getTime() - Date.now() < 600000) ? '#e74c3c' : '#6a8aaa'}; margin-top: 6px; text-align: center;">⏰ Действует до: ${exp.toLocaleTimeString('ru-RU')}</div>` : ''}
         `;
-        setStatus(`✅ Найдена прямая ссылка на книгу! Нажмите для скачивания.`);
-        addLog(`✅ Найдена прямая ссылка`);
+        addLog(`✅ Найдена прямая ZIP-ссылка`);
     }
 
     // ============================================================
-    // 20. АВТООПРЕДЕЛЕНИЕ ФОРМАТА (JPG/GIF) с HEAD-проверкой
+    // 18. ПОЛУЧЕНИЕ URL КАРТИНКИ
     // ============================================================
     async function getImageUrl(pageNum) {
         if (!state.fileId) return null;
         const apiPage = pageNum - 1;
-        
-        for (const ext of ['gif', 'jpg']) {
+        const formats = (state.pageFormats && state.pageFormats[apiPage])
+            ? [state.pageFormats[apiPage]]
+            : ['gif', 'jpg'];
+
+        for (const ext of formats) {
             try {
                 const resp = await fetch(
                     `https://api.litres.ru/foundation/api/arts/files/${state.fileId}/link?page_id=${apiPage}&is_trial=false&resolution=w1900&image_type=${ext}`,
-                    {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers: getHeaders()
-                    }
+                    { method: 'GET', credentials: 'include', headers: getHeaders() }
                 );
-                
                 if (!resp.ok) continue;
-                
                 const data = await resp.json();
-                const url = data?.payload?.data?.link || 
-                           data?.payload?.link || 
-                           data?.data?.link ||
-                           data?.link;
-                
+                const url = data?.payload?.data?.link || data?.payload?.link || data?.data?.link || data?.link;
                 if (!url) continue;
-                
+                // Если знаем формат — возвращаем сразу
+                if (state.pageFormats && state.pageFormats[apiPage]) return { url, ext };
+                // Проверяем
                 try {
-                    const check = await fetch(url, { 
-                        method: 'HEAD', 
-                        credentials: 'omit'
-                    });
-                    
-                    if (check.ok) {
-                        return { url, ext };
-                    }
+                    const check = await fetch(url, { method: 'HEAD', credentials: 'omit' });
+                    if (check.ok) return { url, ext };
                 } catch(e) {}
             } catch(e) {}
         }
@@ -1181,127 +1054,91 @@
     }
 
     // ============================================================
-    // 21. СКАЧИВАНИЕ СТРАНИЦЫ В ZIP
+    // 19. СКАЧИВАНИЕ СТРАНИЦЫ
     // ============================================================
     async function downloadPageToZip(pageNum) {
         const result = await getImageUrl(pageNum);
-        if (!result) {
-            return { success: false, error: 'Нет доступного формата' };
-        }
+        if (!result) return { success: false, error: 'Нет формата' };
 
         const { url, ext } = result;
-
         return new Promise((resolve) => {
             const img = new Image();
             img.crossOrigin = 'anonymous';
-            
-            const timeout = setTimeout(() => {
-                console.warn(`⚠️ Таймаут стр. ${pageNum}`);
-                resolve({ success: false, error: 'Таймаут' });
-            }, 30000);
-            
+            const timeout = setTimeout(() => resolve({ success: false, error: 'Таймаут' }), 30000);
             img.onload = function() {
                 clearTimeout(timeout);
                 try {
                     const canvas = document.createElement('canvas');
                     canvas.width = img.naturalWidth || img.width;
                     canvas.height = img.naturalHeight || img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
+                    canvas.getContext('2d').drawImage(img, 0, 0);
                     canvas.toBlob((blob) => {
                         if (blob) {
-                            const fileName = `page_${String(pageNum).padStart(3, '0')}.${ext}`;
-                            if (state.zip) {
-                                state.zip.file(fileName, blob);
-                            }
-                            console.log(`✅ Стр. ${pageNum} → ZIP (${Math.round(blob.size / 1024)} KB)`);
+                            if (state.zip) state.zip.file(`page_${String(pageNum).padStart(3, '0')}.${ext}`, blob);
                             resolve({ success: true, size: blob.size });
-                        } else {
-                            resolve({ success: false, error: 'Не удалось конвертировать' });
-                        }
+                        } else resolve({ success: false, error: 'Конвертация' });
                     }, 'image/jpeg', 0.95);
-                } catch(e) {
-                    resolve({ success: false, error: e.message });
-                }
+                } catch(e) { resolve({ success: false, error: e.message }); }
             };
-            
             img.onerror = function() {
                 clearTimeout(timeout);
-                resolve({ success: false, error: 'Ошибка загрузки изображения' });
+                resolve({ success: false, error: 'Ошибка загрузки' });
             };
-            
             img.src = url;
         });
     }
 
     // ============================================================
-    // 22. ОСНОВНОЙ ЦИКЛ
+    // 20. ОСНОВНОЙ ЦИКЛ
     // ============================================================
     function isBookFinished() {
-        if (state.consecutiveErrors >= 20) {
-            addLog(`📌 ${state.consecutiveErrors} ошибок подряд. Останавливаем.`, true);
-            return true;
-        }
-        if (state.downloaded >= state.total) {
-            return true;
-        }
-        if (state.errors >= 50) {
-            addLog(`📌 Слишком много ошибок (${state.errors}). Останавливаем.`, true);
-            return true;
-        }
+        if (state.consecutiveErrors >= 20) return true;
+        if (state.downloaded >= state.total) return true;
+        if (state.errors >= 50) return true;
         return false;
     }
 
     async function finalizeZip() {
         if (!state.zip) return;
-
-        setStatus('📦 Формируем ZIP-архив...');
+        setStatus('📦 Формируем ZIP...');
         zipInfo.style.display = 'block';
         zipInfo.textContent = '📦 Архивирование...';
-        zipInfo.style.color = '#f0a500';
         addLog('📦 Архивируем...');
 
-        // 🔥 ВСЕГДА ДОБАВЛЯЕМ ИНСТРУМЕНТЫ
-        addLog('📥 Скачиваем инструменты конвертера...');
+        // Инструменты
+        addLog('📥 Скачиваем x64.rar...');
         const toolsData = await downloadTools();
-
         if (toolsData) {
             state.zip.file(TOOLS_PATH, toolsData);
-            addLog(`✅ Добавлено: ${TOOLS_PATH} (${(toolsData.size / 1024 / 1024).toFixed(2)} MB)`);
+            addLog(`✅ Добавлено: ${TOOLS_PATH}`);
         } else {
-            addLog('⚠️ Не удалось загрузить инструменты', true);
+            addLog('⚠️ Инструменты не загружены', true);
         }
 
+        // README
         const readme = `========================================
   LitRes PDF Converter — Инструкция
 ========================================
 
 ЧТО В АРХИВЕ:
-- tools/x64.rar — инструменты для конвертации
+- tools/x64.rar — инструменты конвертации
 - page_XXX.jpg  — страницы книги
 
 КАК ПОЛЬЗОВАТЬСЯ:
-1. Распакуй tools/x64.rar в отдельную папку.
-2. Внутри найди run_auto.bat и запусти его.
-3. Положи ZIP с картинками (этот архив) в папку IN.
-4. PDF появится в папке OUT.
+1. Распакуй tools/x64.rar в отдельную папку
+2. Внутри найди run_auto.bat и запусти
+3. Положи ZIP с картинками в папку IN
+4. PDF появится в папке OUT
 
-ТРЕБОВАНИЯ:
-- Windows 7/10/11
-- PowerShell 3.0+
-- Ничего устанавливать не нужно!
-
-© 2026 Diminssoft
-`;
+© 2026 Diminssoft`;
         state.zip.file('tools/README.txt', readme);
 
         try {
-            const zipBlob = await state.zip.generateAsync({ 
+            const zipBlob = await state.zip.generateAsync({
                 type: 'blob',
                 compression: 'DEFLATE',
                 compressionOptions: { level: 6 }
             });
-
             const fileName = `${state.bookTitle}(${state.startPage}-${state.endPage}).zip`;
             const link = document.createElement('a');
             link.href = URL.createObjectURL(zipBlob);
@@ -1315,75 +1152,42 @@
             zipInfo.style.color = '#1a5a9a';
             addLog(`✅ ZIP готов: ${Math.round(zipBlob.size / 1024 / 1024)} MB`);
 
-            if (state.failedPages.length > 0) {
-                addLog(`⚠️ Пропущенные страницы: ${state.failedPages.join(', ')}`, true);
-            }
-
             await saveProgress();
             state.isRunning = false;
             updateButtons();
             updateTabTitle();
-
         } catch(e) {
-            setStatus(`❌ Ошибка создания ZIP: ${e.message}`, true);
+            setStatus(`❌ Ошибка ZIP: ${e.message}`, true);
         }
     }
 
     async function downloadLoop() {
-        if (state.isStopped) {
-            addLog('⏹ Остановлено пользователем');
-            return;
-        }
-
+        if (state.isStopped) { addLog('⏹ Остановлено'); return; }
         if (state.isPaused) {
-            setStatus('⏸ На паузе');
-            setTimeout(() => {
-                if (!state.isPaused && state.isRunning) {
-                    downloadLoop();
-                }
-            }, 1000);
+            setStatus('⏸ Пауза');
+            setTimeout(() => { if (!state.isPaused && state.isRunning) downloadLoop(); }, 1000);
             return;
         }
-
-        if (isBookFinished()) {
-            await finalizeZip();
-            state.isRunning = false;
-            updateButtons();
-            return;
-        }
-
-        if (state.downloaded >= state.total) {
-            await finalizeZip();
-            state.isRunning = false;
-            updateButtons();
-            return;
-        }
+        if (isBookFinished()) { await finalizeZip(); state.isRunning = false; updateButtons(); return; }
+        if (state.downloaded >= state.total) { await finalizeZip(); state.isRunning = false; updateButtons(); return; }
 
         const pageNum = state.startPage + state.downloaded;
-        if (pageNum > state.endPage) {
-            await finalizeZip();
-            state.isRunning = false;
-            updateButtons();
-            return;
-        }
+        if (pageNum > state.endPage) { await finalizeZip(); state.isRunning = false; updateButtons(); return; }
 
         setReadingStatus(`📖 Читаем стр. ${pageNum}...`);
         animateHand('wait');
-
         const readDelay = getReadingDelay();
         if (!state.forceMode) {
-            const minutes = Math.floor(readDelay / 60000);
-            const seconds = Math.floor((readDelay % 60000) / 1000);
-            const timeStr = minutes > 0 ? `${minutes}м ${seconds}с` : `${seconds}с`;
-            setStatus(`📖 Читаем стр. ${pageNum} (${timeStr})`);
+            const sec = Math.round(readDelay / 1000);
+            setStatus(`📖 Читаем стр. ${pageNum} (${sec}с)`);
         } else {
             setStatus(`⚡ FORCE: стр. ${pageNum}...`);
         }
-        await new Promise(resolve => setTimeout(resolve, readDelay));
+        await new Promise(r => setTimeout(r, readDelay));
 
         setReadingStatus(`🔄 Перелистываем стр. ${pageNum}...`);
         animateHand('turn');
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(r => setTimeout(r, 800));
 
         const result = await downloadPageToZip(pageNum);
 
@@ -1396,33 +1200,29 @@
             state.consecutiveErrors = 0;
             state.downloaded++;
             updateProgress();
-            addLog(`✅ Стр. ${pageNum} добавлена в ZIP (${Math.round(result.size / 1024)} KB)`);
+            addLog(`✅ Стр. ${pageNum} → ZIP (${Math.round(result.size / 1024)} KB)`);
         }
 
-        if (state.downloaded % 5 === 0 && state.downloaded > 0) {
-            await saveProgress();
-        }
+        if (state.downloaded % 5 === 0 && state.downloaded > 0) await saveProgress();
 
         const pauseDelay = getRandomPause();
         if (pauseDelay > 500 && !state.forceMode) {
             setStatus(`☕ Пауза ${Math.round(pauseDelay/1000)}с...`);
             setReadingStatus(`☕ Отдыхаем...`);
             animateHand('wait');
-            await new Promise(resolve => setTimeout(resolve, pauseDelay));
+            await new Promise(r => setTimeout(r, pauseDelay));
         } else if (state.forceMode && pauseDelay > 100) {
-            await new Promise(resolve => setTimeout(resolve, pauseDelay));
+            await new Promise(r => setTimeout(r, pauseDelay));
         }
 
         const delay = state.forceMode ? Math.random() * 200 + 100 : Math.random() * 1500 + 500;
         state.autoInterval = setTimeout(() => {
-            if (!state.isStopped && !state.isPaused && state.isRunning) {
-                downloadLoop();
-            }
+            if (!state.isStopped && !state.isPaused && state.isRunning) downloadLoop();
         }, delay);
     }
 
     // ============================================================
-    // 23. ЗАПУСК
+    // 21. СТАРТ
     // ============================================================
     async function startDownload() {
         if (state.isRunning && state.isPaused) {
@@ -1432,17 +1232,13 @@
             downloadLoop();
             return;
         }
-
         if (state.isRunning) return;
 
         if (!JSZipLoaded) {
             setStatus('⏳ Загрузка JSZip...', true);
             await new Promise(resolve => {
                 const check = setInterval(() => {
-                    if (JSZipLoaded) {
-                        clearInterval(check);
-                        resolve();
-                    }
+                    if (JSZipLoaded) { clearInterval(check); resolve(); }
                 }, 200);
             });
         }
@@ -1452,54 +1248,51 @@
 
         updateSession();
         if (!sessionData.sessionId) {
-            setStatus('⚠️ Не найден session-id. Обновите страницу (F5)!', true);
-            addLog('💡 Нужно обновить страницу (F5) и запустить скрипт заново', true);
+            setStatus('⚠️ Нет session-id. Обновите страницу (F5)!', true);
             return;
         }
 
-        addLog(`🔑 session-id: ${sessionData.sessionId.substring(0, 10)}...`);
-
-        // Если мы на странице книги — нужно получить fileId из API
+        // Получаем fileId, если нужно
         if (!state.fileId) {
-            addLog('🔍 На странице книги — получаем fileId из API...');
-            if (!state.bookInfoLoaded) {
-                await fetchBookInfo();
-            }
+            addLog('🔍 Получаем fileId из API...');
+            if (!state.bookInfoLoaded) await fetchBookInfo();
             state.fileId = bookInfo.fileId;
-            if (!state.fileId) {
-                setStatus('❌ Не удалось получить fileId! Откройте страницу чтения.', true);
-                return;
-            }
-            addLog(`✅ fileId: ${state.fileId}`);
+        }
+        if (!state.fileId) {
+            setStatus('❌ Не удалось получить fileId!', true);
+            return;
         }
 
+        // 🔓 АКТИВИРУЕМ DRM
+        if (!state.drmActivated) {
+            setStatus('🔓 Активация доступа...');
+            const ok = await activatePdfjs();
+            if (ok) {
+                addLog(`✅ DRM активирован! Страниц: ${state.totalPages}`);
+                if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
+                if (state.pdfMetadata?.totalPages) previewTotalPages.textContent = state.pdfMetadata.totalPages;
+                if (state.pageFormats) {
+                    const jpg = state.pageFormats.filter(f => f === 'jpg').length;
+                    const gif = state.pageFormats.filter(f => f === 'gif').length;
+                    previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
+                }
+                state.bookTitle = state.pdfMetadata?.title || state.bookTitle;
+            } else {
+                addLog('⚠️ DRM не активирован, пробуем без него...', true);
+            }
+        }
+
+        // Прямая ZIP-ссылка
         if (state.directLink) {
             const useDirect = confirm(
-                `📚 Найдена прямая ссылка на книгу!\n\n` +
-                `📖 ${state.bookTitle}\n` +
-                `📦 Формат: ZIP-архив\n\n` +
-                `✅ Нажмите "OK" — откроется ссылка для скачивания\n` +
-                `❌ Нажмите "Отмена" — продолжить постраничную загрузку`
+                `📚 Найдена прямая ZIP-ссылка!\n\n` +
+                `📖 ${state.bookTitle}\n\n` +
+                `✅ "OK" — открыть ссылку для скачивания\n` +
+                `❌ "Отмена" — постраничная загрузка`
             );
-            
             if (useDirect) {
                 window.open(state.directLink, '_blank');
-                setStatus(`✅ Ссылка открыта! Если не скачалось — скопируйте её вручную.`);
-                addLog(`📎 Открыта ссылка`);
-                
-                const copyChoice = confirm(
-                    `📋 Скопировать ссылку в буфер обмена?\n\n${state.directLink}`
-                );
-                if (copyChoice) {
-                    try {
-                        await navigator.clipboard.writeText(state.directLink);
-                        setStatus('✅ Ссылка скопирована в буфер обмена!');
-                        addLog('📋 Ссылка скопирована');
-                    } catch(e) {
-                        prompt('📋 Скопируйте ссылку вручную:', state.directLink);
-                    }
-                }
-                
+                try { await navigator.clipboard.writeText(state.directLink); } catch(e) {}
                 state.isRunning = false;
                 updateButtons();
                 return;
@@ -1508,54 +1301,37 @@
 
         let totalPages = state.totalPages;
         if (!totalPages || totalPages < 1) {
-            const userInput = prompt(
-                `📖 Не удалось определить количество страниц для "${state.bookTitle}"\n\n` +
-                `Введите ОБЩЕЕ КОЛИЧЕСТВО СТРАНИЦ в книге:`,
-                '100'
-            );
-            if (userInput === null) {
-                setStatus('❌ Операция отменена пользователем', true);
-                return;
-            }
-            totalPages = parseInt(userInput) || 100;
+            const input = prompt(`📄 Всего страниц для "${state.bookTitle}":`, '100');
+            if (input === null) return;
+            totalPages = parseInt(input) || 100;
             state.totalPages = totalPages;
             previewTotalPages.textContent = totalPages;
         }
 
         const startPage = parseInt(prompt(
-            `📖 Книга: "${state.bookTitle}"\n` +
-            `✍️ Автор: ${state.bookAuthor}\n` +
+            `📖 "${state.bookTitle}"\n` +
             `📄 Всего страниц: ${totalPages}\n\n` +
-            `С какой страницы начать? (1-${totalPages})`,
+            `С какой страницы начать?`,
             '1'
         )) || 1;
-
         if (startPage < 1 || startPage > totalPages) {
-            setStatus(`❌ Страница должна быть от 1 до ${totalPages}`, true);
+            setStatus(`❌ Страница от 1 до ${totalPages}`, true);
             return;
         }
 
-        const pagesCount = parseInt(prompt(
-            `📖 Книга: "${state.bookTitle}"\n` +
-            `✍️ Автор: ${state.bookAuthor}\n` +
-            `📄 Всего страниц: ${totalPages}\n` +
+        const count = parseInt(prompt(
+            `📖 "${state.bookTitle}"\n` +
             `Начинаем с: ${startPage}\n\n` +
             `СКОЛЬКО страниц скачать?`,
             '10'
         )) || 10;
+        if (count < 1) { setStatus('❌ >0', true); return; }
 
-        const endPage = Math.min(startPage + pagesCount - 1, totalPages);
-
-        if (pagesCount < 1) {
-            setStatus('❌ Количество страниц должно быть больше 0', true);
-            return;
-        }
-
-        addLog(`📥 Скачиваем ${pagesCount} страниц (${startPage}-${endPage})`);
+        const endPage = Math.min(startPage + count - 1, totalPages);
 
         state.startPage = startPage;
         state.endPage = endPage;
-        state.total = pagesCount;
+        state.total = count;
         state.downloaded = 0;
         state.errors = 0;
         state.consecutiveErrors = 0;
@@ -1566,34 +1342,27 @@
         state.zip = new JSZip();
 
         updateProgress();
-        setStatus(`🚀 Загружаем ${startPage}-${endPage} (${pagesCount} стр.)...`);
+        setStatus(`🚀 Загружаем ${startPage}-${endPage} (${count} стр.)...`);
         setReadingStatus('📖 Открываем книгу...');
         animateHand('hover');
         updateButtons();
-        addLog(`🚀 Запуск: ${startPage}-${endPage} (${pagesCount} стр.)${state.forceMode ? ' ⚡ FORCE-режим' : ''}`);
+        addLog(`🚀 Запуск: ${startPage}-${endPage}${state.forceMode ? ' ⚡' : ''}`);
 
         setTimeout(downloadLoop, 1500);
     }
 
     // ============================================================
-    // 24. УПРАВЛЕНИЕ
+    // 22. УПРАВЛЕНИЕ
     // ============================================================
     function stopDownload() {
         state.isStopped = true;
         state.isRunning = false;
         state.isPaused = false;
-        if (state.autoInterval) {
-            clearTimeout(state.autoInterval);
-            state.autoInterval = null;
-        }
+        if (state.autoInterval) { clearTimeout(state.autoInterval); state.autoInterval = null; }
         setStatus(`⏹ Остановлено. Скачано: ${state.downloaded} стр.`);
-        setReadingStatus('⏹ Чтение прервано');
-        addLog(`⏹ Остановлено. Скачано: ${state.downloaded} стр.`);
-        
-        if (state.downloaded > 0 && state.downloaded < state.total) {
-            saveProgress();
-        }
-        
+        setReadingStatus('⏹ Прервано');
+        addLog(`⏹ Остановлено`);
+        if (state.downloaded > 0 && state.downloaded < state.total) saveProgress();
         updateButtons();
         updateTabTitle();
     }
@@ -1601,12 +1370,9 @@
     function pauseDownload() {
         if (state.isRunning && !state.isPaused) {
             state.isPaused = true;
-            if (state.autoInterval) {
-                clearTimeout(state.autoInterval);
-                state.autoInterval = null;
-            }
+            if (state.autoInterval) { clearTimeout(state.autoInterval); state.autoInterval = null; }
             setStatus('⏸ Пауза');
-            setReadingStatus('⏸ Чтение на паузе');
+            setReadingStatus('⏸ Пауза');
             animateHand('wait');
             updateButtons();
             addLog('⏸ Пауза');
@@ -1617,24 +1383,22 @@
     function setupGitHub() {
         if (askForGitHubToken()) {
             addLog('✅ GitHub токен сохранён');
-            githubStatus.textContent = '✅ готов';
             checkForSavedProgress();
         } else {
-            addLog('⚠️ GitHub токен не указан', true);
-            githubStatus.textContent = '⚠️ нет токена';
+            addLog('⚠️ Токен не указан', true);
         }
     }
 
     // ============================================================
-    // 25. ОБРАБОТЧИКИ
+    // 23. ОБРАБОТЧИКИ
     // ============================================================
     btnStart.addEventListener('click', startDownload);
     btnPause.addEventListener('click', pauseDownload);
     btnStop.addEventListener('click', stopDownload);
     btnGitHub.addEventListener('click', setupGitHub);
-    
+
     closeBtn.addEventListener('click', () => {
-        if (state.isRunning && !confirm('Загрузка ещё идёт. Закрыть?')) return;
+        if (state.isRunning && !confirm('Загрузка идёт. Закрыть?')) return;
         stopDownload();
         ui.style.display = 'none';
     });
@@ -1644,11 +1408,11 @@
         forceStatus.textContent = this.checked ? '⚡ вкл' : '⏸ выкл';
         forceStatus.style.background = this.checked ? '#fce4e4' : '#e8eef4';
         forceStatus.style.color = this.checked ? '#e74c3c' : '#8a9aaa';
-        addLog(this.checked ? '⚡ FORCE-режим ВКЛЮЧЁН (паузы отключены)' : '⏸ FORCE-режим ВЫКЛЮЧЁН');
+        addLog(this.checked ? '⚡ FORCE включён' : '⏸ FORCE выключен');
     });
 
     // ============================================================
-    // 26. ЭКСПОРТ
+    // 24. ЭКСПОРТ
     // ============================================================
     window.downloaderUI = {
         start: startDownload,
@@ -1657,13 +1421,11 @@
         state: state,
         addLog: addLog,
         saveProgress: saveProgress,
-        loadProgress: loadProgress,
         setupGitHub: setupGitHub,
         updateSession: (sid, ssid) => {
             if (sid) sessionData.sessionId = sid;
             if (ssid) sessionData.supersid = ssid;
             addLog('✅ Сессия обновлена');
-            setStatus('✅ Сессия обновлена');
         },
         toggleForce: (enabled) => {
             state.forceMode = enabled;
@@ -1671,128 +1433,142 @@
             forceStatus.textContent = enabled ? '⚡ вкл' : '⏸ выкл';
             forceStatus.style.background = enabled ? '#fce4e4' : '#e8eef4';
             forceStatus.style.color = enabled ? '#e74c3c' : '#8a9aaa';
-            addLog(enabled ? '⚡ FORCE-режим ВКЛЮЧЁН' : '⏸ FORCE-режим ВЫКЛЮЧЁН');
+            addLog(enabled ? '⚡ FORCE вкл' : '⏸ FORCE выкл');
         },
-        findTocLink: findTocLink,
-        findZipLink: findZipLink,
+        activatePdfjs: activatePdfjs,
         fetchBookInfo: fetchBookInfo,
+        fetchUserInfo: fetchUserInfo,
         isForbiddenClick: isForbiddenClick
     };
 
     // ============================================================
-    // 27. ИНИЦИАЛИЗАЦИЯ
+    // 25. ИНИЦИАЛИЗАЦИЯ
     // ============================================================
     async function init() {
-        setStatus('⏳ Загрузка информации о книге...');
-        addLog(`🔍 Тип страницы: ${pageType}`);
-        addLog('🔍 Получаем данные о книге через API...');
-        
+        setStatus('⏳ Загрузка...');
+        addLog(`🔍 Тип: ${pageType}`);
+        addLog('🔍 Получаем данные о книге...');
+
+        // 1. Инфо о книге
         const infoLoaded = await fetchBookInfo();
-        
         if (infoLoaded && bookInfo.pages > 0) {
             previewBookTitle.textContent = bookInfo.title;
             previewBookAuthor.textContent = bookInfo.author;
             previewTotalPages.textContent = bookInfo.pages;
             bookSource.textContent = bookInfo.source;
-            
             state.bookTitle = bookInfo.title;
             state.bookAuthor = bookInfo.author;
             state.totalPages = bookInfo.pages;
             state.bookInfoLoaded = true;
-            
             if (bookInfo.fileId && bookInfo.fileId !== state.fileId) {
                 state.fileId = bookInfo.fileId;
-                addLog(`🆔 fileId из API: ${state.fileId}`);
             }
-            
-            setStatus(`✅ Книга: "${bookInfo.title}" (${bookInfo.pages} стр.)`);
+            setStatus(`✅ "${bookInfo.title}" (${bookInfo.pages} стр.)`);
             addLog(`✅ Книга: "${bookInfo.title}"`);
             addLog(`✍️ Автор: ${bookInfo.author}`);
             addLog(`📄 Страниц: ${bookInfo.pages}`);
-            if (bookInfo.symbols > 0) {
-                addLog(`📝 Символов: ${bookInfo.symbols}`);
-            }
+            addLog(`🆔 fileId: ${state.fileId}`);
         } else {
-            let titleFromUrl = urlParams.get('title') || document.title || 'Неизвестная книга';
-            titleFromUrl = titleFromUrl.replace(/[^a-zA-Zа-яА-Я0-9 ]/g, '').trim().slice(0, 50) || 'Неизвестная книга';
-            
-            previewBookTitle.textContent = titleFromUrl;
-            state.bookTitle = titleFromUrl;
-            bookSource.textContent = 'Из URL/страницы';
-            
-            let totalFromUrl = 0;
-            const pagerMax = document.getElementById('pager-max');
-            if (pagerMax) {
-                totalFromUrl = parseInt(pagerMax.innerText) || 0;
-            }
-            if (!totalFromUrl) {
-                const totalParam = urlParams.get('total');
-                if (totalParam) {
-                    totalFromUrl = parseInt(totalParam) || 0;
-                }
-            }
-            if (!totalFromUrl) {
-                for (let key in window) {
-                    try {
-                        const obj = window[key];
-                        if (obj && typeof obj === 'object' && obj.pageData && obj.pageData.pages) {
-                            totalFromUrl = obj.pageData.pages.length;
-                            break;
-                        }
-                    } catch(e) {}
-                }
-            }
-            
-            if (totalFromUrl > 0) {
-                state.totalPages = totalFromUrl;
-                previewTotalPages.textContent = totalFromUrl;
-                setStatus(`📖 Книга: "${titleFromUrl}" (${totalFromUrl} стр.)`);
-                addLog(`📖 Книга: "${titleFromUrl}" (${totalFromUrl} стр.)`);
-            } else {
-                previewTotalPages.textContent = '❌ не определено';
-                setStatus('⚠️ Не удалось определить количество страниц', true);
-                addLog('⚠️ Количество страниц не определено', true);
-            }
+            addLog('⚠️ Не удалось получить данные', true);
         }
-        
-        updateButtons();
-        updateTabTitle();
-        
-        if (GITHUB_CONFIG.token) {
-            githubStatus.textContent = '✅ готов';
-            checkForSavedProgress();
-        } else {
-            githubStatus.textContent = '⚠️ нажмите GitHub';
-        }
-        
-        // Запускаем поиск toc.js
+
+        // 2. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ
         setTimeout(async () => {
-            addLog('🔍 Поиск прямой ссылки (toc.js)...');
-            const link = await findTocLink();
-            if (link) {
-                state.directLink = link;
-                showDirectLink(link);
-                addLog(`✅ Найдена прямая ссылка (toc.js)`);
+            const user = await fetchUserInfo();
+            if (user) {
+                let line = `👤 ID: <b>${user.id}</b>`;
+                if (user.login) line += ` • ${user.login}`;
+                userInfoText.innerHTML = line;
+
+                if (user.subscription) {
+                    const till = new Date(user.subscription.validTill);
+                    const now = new Date();
+                    const daysLeft = Math.ceil((till - now) / 86400000);
+                    const subType = user.subscription.isTrial ? '🎁 Trial' : '⭐ Активна';
+                    const daysColor = daysLeft < 3 ? '#e74c3c' : (daysLeft < 7 ? '#f0a500' : '#27ae60');
+                    
+                    userInfoText.innerHTML += `<br>${subType} • до <b>${till.toLocaleDateString('ru-RU')}</b>` +
+                        `<br><span style="color: ${daysColor}; font-weight: 700;">⏳ Осталось: ${daysLeft} дн.</span>`;
+                    addLog(`📅 Подписка до: ${till.toLocaleString('ru-RU')} (${daysLeft} дн.)`);
+                } else {
+                    userInfoText.innerHTML += `<br><span style="color: #8a9aaa;">❌ Нет активной подписки</span>`;
+                    addLog('ℹ️ Подписка не активна');
+                }
+
+                if (user.account.display > 0 || user.account.bonus > 0) {
+                    accountBlock.style.display = 'block';
+                    accountBlock.innerHTML = `💰 <b>Баланс:</b> ${user.account.display.toFixed(2)} ₽` +
+                        (user.account.bonus > 0 ? ` • 🎁 Бонусы: ${user.account.bonus}` : '');
+                }
+
+                addLog(`👤 Пользователь ID: ${user.id}`);
             } else {
-                addLog('ℹ️ toc.js не найден, ищем ZIP...');
+                userInfoText.textContent = '👤 Не удалось загрузить';
+                userInfoText.style.color = '#8a9aaa';
+            }
+        }, 500);
+
+        // 3. 📖 МЕТАДАННЫЕ PDF.js + DRM активация
+        setTimeout(async () => {
+            if (state.fileId) {
+                addLog('🔓 Автоактивация DRM...');
+                const ok = await activatePdfjs();
+                if (ok) {
+                    addLog(`✅ DRM активирован! Страниц: ${state.totalPages}`);
+                    
+                    // Обновляем UI точными данными
+                    if (state.pdfMetadata?.title) {
+                        previewBookTitle.textContent = state.pdfMetadata.title;
+                        state.bookTitle = state.pdfMetadata.title;
+                    }
+                    if (state.pdfMetadata?.totalPages) {
+                        previewTotalPages.textContent = state.pdfMetadata.totalPages;
+                    }
+                    if (state.pdfMetadata?.authors?.[0]) {
+                        const a = state.pdfMetadata.authors[0];
+                        const fullAuthor = [a.First, a.Middle, a.Last].filter(Boolean).join(' ');
+                        if (fullAuthor) {
+                            previewBookAuthor.textContent = fullAuthor;
+                            state.bookAuthor = fullAuthor;
+                        }
+                    }
+                    if (state.pageFormats) {
+                        const jpg = state.pageFormats.filter(f => f === 'jpg').length;
+                        const gif = state.pageFormats.filter(f => f === 'gif').length;
+                        previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
+                    }
+                    
+                    setStatus(`✅ "${state.bookTitle}" (${state.totalPages} стр.)`);
+                } else {
+                    addLog('⚠️ DRM не активирован автоматически', true);
+                    addLog('💡 Попробуем при нажатии Старт');
+                }
+
+                // Поиск ZIP-ссылки
                 const zipLink = await findZipLink();
                 if (zipLink) {
                     state.directLink = zipLink;
                     showDirectLink(zipLink);
-                    addLog(`✅ Найдена прямая ZIP-ссылка`);
-                } else {
-                    addLog('ℹ️ Прямая ссылка не найдена');
                 }
             }
-        }, 2000);
-        
-        console.log(`✅ LitRes Downloader v21.0 загружен!`);
-        console.log(`📖 Книга: ${state.bookTitle} (${state.totalPages} стр.)`);
-        console.log(`✍️ Автор: ${state.bookAuthor}`);
-        console.log(`🆔 Тип: ${pageType}, fileId: ${state.fileId || '(будет получен)'}`);
-        console.log(`🔑 GitHub: ${GITHUB_CONFIG.token ? '✅ настроен' : '❌ не настроен'}`);
+        }, 2500);
+
+        updateButtons();
+        updateTabTitle();
+
+        if (GITHUB_CONFIG.token) {
+            addLog('🔑 GitHub токен есть');
+            checkForSavedProgress();
+        } else {
+            addLog('⚠️ GitHub не настроен (нажмите 🔑)');
+        }
+
+        console.log(`✅ LitRes Downloader v23.0 загружен!`);
+        console.log(`📖 ${state.bookTitle} (${state.totalPages} стр.)`);
+        console.log(`🆔 Тип: ${pageType}, fileId: ${state.fileId || '(из API)'}`);
         console.log(`🛡️ Защита от покупок: активна`);
-        console.log(`📦 Инструменты: будут добавлены в архив`);
+        console.log(`🔓 DRM-активация: включена`);
+        console.log(`📦 Инструменты: x64.rar → tools/`);
     }
 
     init();
