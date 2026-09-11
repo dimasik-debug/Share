@@ -1,19 +1,20 @@
 /**
- * LitRes Downloader v31.0
+ * LitRes Downloader v31.2
  * 🧹 Автоочистка кэша jsDelivr
  * 📦 Прямое скачивание ZIP
- * 🆕 📖 JSON-главы (fallback когда ZIP 404)
+ * 📖 Автоматический JSON fallback (если ZIP 404)
  * 📚 Поддержка PDF + FB2 + EPUB + HTML
- * 🎯 5 кнопок + SPA + шрифт +25%
+ * 🎯 4 кнопки + SPA + шрифт +25%
  * 🆕 Чекбокс App Tools (x64.rar в архив)
+ * 🆕 Формат книги в шапке
  * (c) 2026 Diminssoft
  */
 
 (function fullDownloaderV31() {
-    console.log('🚀 LitRes Downloader v31.0 — ZIP + JSON fallback!');
+    console.log('🚀 LitRes Downloader v31.2 — ZIP + JSON fallback!');
 
     // ============================================================
-    // 🧹 АВТООЧИСТКА КЭША jsDelivr (при запуске)
+    // 🧹 АВТООЧИСТКА КЭША jsDelivr
     // ============================================================
     (function autoPurge() {
         try {
@@ -151,10 +152,6 @@
 
     const ADD_TOOLS_KEY = 'litres_add_tools';
     const addToolsDefault = localStorage.getItem(ADD_TOOLS_KEY) !== 'false';
-
-    // 🆕 Настройка JSON fallback
-    const JSON_FALLBACK_KEY = 'litres_json_fallback';
-    const jsonFallbackDefault = localStorage.getItem(JSON_FALLBACK_KEY) !== 'false';
 
     // ============================================================
     // 2. GITHUB
@@ -314,8 +311,33 @@
         pages: 0,
         fileId: fileId,
         artId: artId,
-        source: 'не определено'
+        source: 'не определено',
+        format: null // 🆕 {icon, name}
     };
+
+    // 🆕 Определение формата по имени файла
+    function detectFormatFromName(fname) {
+        if (!fname) return null;
+        const s = String(fname).toLowerCase();
+        if (s.includes('.fb2.zip') || s.endsWith('.fb2')) return { icon: '📚', name: 'FB2' };
+        if (s.includes('.epub.zip') || s.endsWith('.epub')) return { icon: '📖', name: 'EPUB' };
+        if (s.includes('.pdf.zip') || s.endsWith('.pdf')) return { icon: '📕', name: 'PDF' };
+        if (s.includes('.mobi')) return { icon: '📘', name: 'MOBI' };
+        if (s.includes('.txt')) return { icon: '📄', name: 'TXT' };
+        if (s.includes('.zip')) return { icon: '📦', name: 'ZIP' };
+        return null;
+    }
+
+    function detectFormatFromMime(mime) {
+        if (!mime) return null;
+        const m = String(mime).toLowerCase();
+        if (m.includes('fb2')) return { icon: '📚', name: 'FB2' };
+        if (m.includes('epub')) return { icon: '📖', name: 'EPUB' };
+        if (m.includes('pdf')) return { icon: '📕', name: 'PDF' };
+        if (m.includes('mobi')) return { icon: '📘', name: 'MOBI' };
+        if (m.includes('zip')) return { icon: '📦', name: 'ZIP' };
+        return null;
+    }
 
     async function fetchBookInfo() {
         try {
@@ -333,6 +355,13 @@
             if (payload.files?.length) {
                 const main = payload.files.find(f => !f.is_additional);
                 if (main?.pages) pages = main.pages;
+                // 🆕 Формат из files
+                if (main) {
+                    const fmt = detectFormatFromName(main.filename) ||
+                                detectFormatFromMime(main.mime) ||
+                                detectFormatFromName(main.extension);
+                    if (fmt) bookInfo.format = fmt;
+                }
             }
             if (!pages && payload.additional_info?.current_pages_or_seconds) {
                 pages = payload.additional_info.current_pages_or_seconds;
@@ -375,7 +404,7 @@
     }
 
     // ============================================================
-    // 7. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ
+    // 7. 👤 ИНФО О ПОЛЬЗОВАТЕЛЕ (полная версия)
     // ============================================================
     async function fetchUserInfo() {
         try {
@@ -502,8 +531,16 @@
             var m = url.match(/fname=([^&]+)/);
             filename = m ? decodeURIComponent(m[1]) : 'book.zip';
         }
+        // 🆕 Формат из filename
+        if (!bookInfo.format) {
+            const fmt = detectFormatFromName(filename);
+            if (fmt) {
+                bookInfo.format = fmt;
+                updateFormatDisplay();
+            }
+        }
         console.log('📦 Скачиваем:', filename);
-        
+
         var a = document.createElement('a');
         a.href = url;
         a.download = filename;
@@ -511,7 +548,7 @@
         document.body.appendChild(a);
         a.click();
         setTimeout(function() { a.remove(); }, 1000);
-        
+
         addLog('📦 Скачивается: ' + filename);
         setStatus('📦 Скачивается: ' + filename);
     }
@@ -542,11 +579,17 @@
                     continue;
                 }
                 const data = await resp.json();
-                const link = data?.payload?.data?.link || 
-                             data?.payload?.link || 
-                             data?.data?.link || 
+                const link = data?.payload?.data?.link ||
+                             data?.payload?.link ||
+                             data?.data?.link ||
                              data?.link;
                 if (link && (link.includes('.bin') || link.includes('application/zip') || link.includes('download_book'))) {
+                    // 🆕 Формат из URL
+                    const fmt = detectFormatFromName(link);
+                    if (fmt && !bookInfo.format) {
+                        bookInfo.format = fmt;
+                        updateFormatDisplay();
+                    }
                     console.log(`✅ ZIP: ${link.substring(0, 80)}...`);
                     return link;
                 }
@@ -694,7 +737,7 @@
 <div class="meta">✍️ ${safeAuthor}</div>
 ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${html}`).join('\n')}
 <div class="footer">
-    📚 Скачано через LitRes Downloader v31.0<br>
+    📚 Скачано через LitRes Downloader v31.2<br>
     Всего глав: ${chapters.length} • © 2026 Diminssoft
 </div>
 </body>
@@ -729,7 +772,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             background: #ffffff; color: #1a2a4a;
             border-radius: ${px(14)}; padding: ${px(14)} ${px(16)};
             font-family: 'Segoe UI', Arial, sans-serif; font-size: ${px(12)};
-            width: ${px(390)};
+            width: ${px(380)};
             box-shadow: 0 ${px(8)} ${px(32)} rgba(0,0,0,0.15);
             border: 1px solid rgba(26, 42, 74, 0.08);
             user-select: none; max-height: 95vh; overflow-y: auto;
@@ -741,7 +784,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                         LitRes <span style="color: #1a5a9a;">Downloader</span>
                     </div>
                     <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase; letter-spacing: 0.3px;">
-                        v31.0 • ZIP + JSON fallback
+                        v31.2 • ZIP + JSON fallback
                     </div>
                 </div>
                 <button id="btn_github" style="
@@ -761,7 +804,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 <div style="color: #4a6a8a;">✍️ <span id="preview_book_author">${bookInfo.author}</span></div>
                 <div style="color: #4a6a8a; margin-top: ${px(2)};">
                     📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр.
-                    • 🖼️ <span id="preview_formats">—</span>
+                    • <span id="preview_formats">—</span>
                 </div>
                 <span id="book_source" style="display:none;">${bookInfo.source}</span>
             </div>
@@ -803,22 +846,14 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 <button id="btn_stop" style="flex: 1; padding: ${px(8)} ${px(6)}; background: #f0f2f4; color: #8a9aaa; border: 1px solid #dce2e8; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(11)};" title="Стоп">⏹ Стоп</button>
             </div>
 
-            <div style="display: flex; gap: ${px(4)}; margin-bottom: ${px(6)};">
-                <button id="btn_reader" style="flex: 1; padding: ${px(8)} ${px(6)}; background: #8e44ad; color: #fff; border: none; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(11)};" title="Скачать как HTML через JSON-главы (fallback)">📖 Reader (JSON)</button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: ${px(8)}; padding: ${px(5)} ${px(8)}; background: #f8faff; border-radius: ${px(6)}; border: 1px solid #e8eef4; margin-bottom: ${px(6)}; font-size: ${px(11)}; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: ${px(8)}; padding: ${px(5)} ${px(8)}; background: #f8faff; border-radius: ${px(6)}; border: 1px solid #e8eef4; margin-bottom: ${px(6)}; font-size: ${px(11)};">
                 <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;">
                     <input type="checkbox" id="force_mode" style="width: ${px(14)}; height: ${px(14)}; accent-color: #e74c3c; cursor: pointer;">
                     ⚡ FORCE
                 </label>
-                <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Добавить в архив x64.rar (конвертер в PDF)">
+                <label id="tools_label" style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Добавить в архив x64.rar (конвертер в PDF)">
                     <input type="checkbox" id="add_tools" ${addToolsDefault ? 'checked' : ''} style="width: ${px(14)}; height: ${px(14)}; accent-color: #27ae60; cursor: pointer;">
                     📦 Tools
-                </label>
-                <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Автоматически использовать JSON fallback, если ZIP не найден">
-                    <input type="checkbox" id="json_fallback" ${jsonFallbackDefault ? 'checked' : ''} style="width: ${px(14)}; height: ${px(14)}; accent-color: #8e44ad; cursor: pointer;">
-                    📖 JSON
                 </label>
                 <div id="force_status" style="margin-left: auto; font-size: ${px(10)}; color: #8a9aaa; background: #e8eef4; padding: ${px(1)} ${px(6)}; border-radius: ${px(8)};">⏸ выкл</div>
             </div>
@@ -841,7 +876,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     const btnStartAll = document.getElementById('btn_start_all');
     const btnPause = document.getElementById('btn_pause');
     const btnStop = document.getElementById('btn_stop');
-    const btnReader = document.getElementById('btn_reader');
     const progressBar = document.getElementById('progress_bar');
     const progressText = document.getElementById('progress_text');
     const percentText = document.getElementById('percent_text');
@@ -864,7 +898,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     const userInfoText = document.getElementById('user_info_text');
     const accountBlock = document.getElementById('account_block');
     const addToolsCheckbox = document.getElementById('add_tools');
-    const jsonFallbackCheckbox = document.getElementById('json_fallback');
+    const toolsLabel = document.getElementById('tools_label');
 
     // ============================================================
     // 14. СОСТОЯНИЕ
@@ -881,9 +915,10 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
         bookInfoLoaded: false, directLink: null,
         pdfMetadata: null, pageFormats: null, drmActivated: false,
         addTools: addToolsDefault,
-        jsonFallback: jsonFallbackDefault,
         autoInterval: null,
-        mode: 'zip' // 'zip' | 'json'
+        mode: 'zip',           // 'zip' | 'json'
+        jsonChapters: [],
+        jsonEmptyStreak: 0
     };
 
     // ============================================================
@@ -914,6 +949,40 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     }
 
     function setReadingStatus(text) { readingStatus.textContent = text; }
+
+    // 🆕 Обновление отображения формата в шапке + авто-скрытие Tools
+    function updateFormatDisplay() {
+        const el = previewFormats;
+        if (!el) return;
+
+        // Если формат готовый (FB2/EPUB/PDF-ZIP/MOBI/TXT) — показываем иконку и скрываем Tools
+        if (bookInfo.format) {
+            el.innerHTML = `${bookInfo.format.icon} <b>${bookInfo.format.name}</b>`;
+            el.style.color = '#1a5a9a';
+
+            const isPageByPage = (state.pageFormats && state.pageFormats.length > 0);
+            const isReadyFile = ['FB2', 'EPUB', 'PDF', 'MOBI', 'TXT', 'ZIP'].includes(bookInfo.format.name);
+            const hideTools = isReadyFile && !isPageByPage;
+
+            if (hideTools) {
+                toolsLabel.style.display = 'none';
+                state.addTools = false;
+                addLog(`📖 Формат: ${bookInfo.format.name} — Tools не нужны`);
+            } else {
+                toolsLabel.style.display = 'flex';
+            }
+        } else if (state.pageFormats && state.pageFormats.length > 0) {
+            // Постраничная PDF-сборка
+            const jpg = state.pageFormats.filter(f => f === 'jpg').length;
+            const gif = state.pageFormats.filter(f => f === 'gif').length;
+            el.innerHTML = `📕 <b>PDF</b> • JPG: ${jpg}, GIF: ${gif}`;
+            el.style.color = '#1a5a9a';
+            toolsLabel.style.display = 'flex';
+        } else {
+            el.innerHTML = '—';
+            el.style.color = '#8a9aaa';
+        }
+    }
 
     function animateHand(action) {
         if (action === 'turn') {
@@ -963,9 +1032,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             btnStartAll.disabled = true;
             btnStartAll.style.background = '#b0d4b8';
             btnStartAll.style.color = '#8a9aaa';
-            btnReader.disabled = true;
-            btnReader.style.background = '#d0b0e0';
-            btnReader.style.color = '#8a7aaa';
             btnPause.disabled = false;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#f0a500';
@@ -981,9 +1047,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             btnStartAll.disabled = true;
             btnStartAll.style.background = '#b0d4b8';
             btnStartAll.style.color = '#8a9aaa';
-            btnReader.disabled = true;
-            btnReader.style.background = '#d0b0e0';
-            btnReader.style.color = '#8a7aaa';
             btnPause.disabled = true;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
@@ -1000,9 +1063,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             btnStartAll.textContent = '▶▶ Старт';
             btnStartAll.style.background = '#27ae60';
             btnStartAll.style.color = '#fff';
-            btnReader.disabled = false;
-            btnReader.style.background = '#8e44ad';
-            btnReader.style.color = '#fff';
             btnPause.disabled = true;
             btnPause.textContent = '⏸ Пауза';
             btnPause.style.background = '#e8eef4';
@@ -1017,7 +1077,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     // 16. GITHUB ПРОГРЕСС
     // ============================================================
     async function saveProgress(force = false) {
-        if (!state.zip && state.mode !== 'json') return;
         if (state.downloaded === 0) return;
         if (!GITHUB_CONFIG.token) return;
         const now = Date.now();
@@ -1064,7 +1123,10 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 updateProgress();
                 state.isRunning = true;
                 updateButtons();
-                setTimeout(downloadLoop, 1000);
+                setTimeout(() => {
+                    if (state.mode === 'json') jsonDownloadLoop();
+                    else downloadLoop();
+                }, 1000);
                 return true;
             }
         }
@@ -1137,7 +1199,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     }
 
     // ============================================================
-    // 19. ОСНОВНОЙ ЦИКЛ (ZIP)
+    // 19. ОСНОВНОЙ ЦИКЛ (ZIP/PDF постраничка)
     // ============================================================
     function isBookFinished() {
         if (state.consecutiveErrors >= 20) return true;
@@ -1260,7 +1322,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     }
 
     // ============================================================
-    // 19.1 🆕 ЦИКЛ СКАЧИВАНИЯ JSON-ГЛАВ
+    // 19.1 🆕 ЦИКЛ JSON-ГЛАВ (автоматический fallback)
     // ============================================================
     async function jsonDownloadLoop() {
         if (state.isStopped) return;
@@ -1272,7 +1334,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
 
         const currentNum = state.downloaded;
         const n = String(currentNum).padStart(3, '0');
-        const chapter = state.jsonChapters[currentNum];
 
         setReadingStatus(`📖 Глава ${n}...`);
         animateHand('wait');
@@ -1282,7 +1343,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
         const html = await fetchJsonChapter(currentNum);
 
         if (html === null) {
-            state.jsonEmptyStreak = (state.jsonEmptyStreak || 0) + 1;
+            state.jsonEmptyStreak++;
             addLog(`⚠️ Глава ${n} пустая (${state.jsonEmptyStreak}/3)`);
 
             if (state.jsonEmptyStreak >= 3) {
@@ -1293,13 +1354,11 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
         } else {
             state.jsonEmptyStreak = 0;
             state.jsonChapters.push(html);
-            state.chapters = state.jsonChapters; // алиас
             state.downloaded++;
             updateProgress();
             addLog(`✅ Глава ${n} — ${html.length} символов`);
         }
 
-        // Предохранитель
         if (state.downloaded > 2000) {
             addLog('🛑 Лимит 2000 глав');
             await finalizeJsonBook();
@@ -1340,51 +1399,9 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 author: state.bookAuthor
             });
 
-            let blob, fileName;
             const safeTitle = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
-
-            if (state.addTools) {
-                // Если Tools включены — собираем ZIP с HTML + tools
-                addLog('📦 Формируем ZIP (HTML + tools)...');
-                const z = new JSZip();
-                z.file(`${safeTitle}.html`, html);
-
-                // Бонус: JSON-версия глав для восстановления
-                z.file('meta.json', JSON.stringify({
-                    title: state.bookTitle,
-                    author: state.bookAuthor,
-                    artId: state.artId,
-                    fileId: state.fileId,
-                    chapters: state.jsonChapters.length,
-                    downloaded_at: new Date().toISOString(),
-                    source: 'litres-json-fallback'
-                }, null, 2));
-
-                addLog('📥 Скачиваем x64.rar...');
-                const toolsData = await downloadTools();
-                if (toolsData) {
-                    z.file(TOOLS_PATH, toolsData);
-                    addLog(`✅ Инструменты: ${(toolsData.size / 1024 / 1024).toFixed(2)} MB`);
-                }
-
-                z.file('README.txt', `LitRes Reader (JSON fallback)
-Книга: ${state.bookTitle}
-Автор: ${state.bookAuthor}
-Глав: ${state.jsonChapters.length}
-Файл: ${safeTitle}.html — открой в браузере
-Для PDF: Ctrl+P → Save as PDF
-© 2026 Diminssoft`);
-
-                blob = await z.generateAsync({
-                    type: 'blob', compression: 'DEFLATE',
-                    compressionOptions: { level: 6 }
-                });
-                fileName = `${safeTitle}(JSON).zip`;
-            } else {
-                // Просто HTML-файл
-                blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-                fileName = `${safeTitle}.html`;
-            }
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const fileName = `${safeTitle}.html`;
 
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -1411,7 +1428,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     }
 
     // ============================================================
-    // 20. ▶▶ СТАРТ ВСЁ
+    // 20. ▶▶ СТАРТ ВСЁ (автоматический)
     // ============================================================
     async function startDownloadAll() {
         if (state.isRunning && state.isPaused) {
@@ -1448,22 +1465,18 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             return;
         }
 
-        // 🔓 PDF активация (только если не JSON режим)
-        if (!state.drmActivated && state.mode !== 'json') {
+        // 🔓 PDF активация
+        if (!state.drmActivated) {
             const ok = await activatePdfjs();
             if (ok) {
                 addLog(`✅ PDF: ${state.totalPages} стр.`);
                 if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
                 if (state.totalPages) previewTotalPages.textContent = state.totalPages;
-                if (state.pageFormats) {
-                    const jpg = state.pageFormats.filter(f => f === 'jpg').length;
-                    const gif = state.pageFormats.filter(f => f === 'gif').length;
-                    previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
-                }
+                updateFormatDisplay();
             }
         }
 
-        // 🔥 ПРЯМАЯ ЗАГРУЗКА ZIP
+        // 🔥 СЦЕНАРИЙ 1: Прямая ZIP-ссылка
         if (state.directLink) {
             addLog(`📦 Скачиваем архив напрямую...`);
             setStatus(`📦 Скачиваем архив...`);
@@ -1473,13 +1486,13 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             return;
         }
 
-        // 📖 FALLBACK: JSON-главы
-        if (state.jsonFallback) {
+        // 🔥 СЦЕНАРИЙ 2: JSON fallback (автоматом)
+        if (!state.pageFormats || state.pageFormats.length === 0) {
             addLog(`📖 ZIP не найден → JSON fallback`);
-            return startJsonDownload(true);
+            return startJsonDownload();
         }
 
-        // 📥 Постраничная загрузка (для PDF)
+        // 📥 СЦЕНАРИЙ 3: Постраничная загрузка PDF
         let totalPages = state.totalPages;
         if (!totalPages || totalPages < 1) {
             const input = prompt(`📄 Всего страниц:`, '100');
@@ -1513,43 +1526,17 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     }
 
     // ============================================================
-    // 20.1 🆕 СТАРТ JSON СКАЧИВАНИЯ
+    // 20.1 🆕 АВТО-СТАРТ JSON (без подтверждений)
     // ============================================================
-    async function startJsonDownload(auto = false) {
+    async function startJsonDownload() {
         if (state.isRunning) return;
 
-        updateSession();
-        if (!sessionData.sessionId) {
-            setStatus('⚠️ Нет session-id. F5!', true);
-            return;
-        }
-
-        if (!state.fileId) {
-            if (!state.bookInfoLoaded) await fetchBookInfo();
-            state.fileId = bookInfo.fileId;
-        }
-        if (!state.fileId) {
-            setStatus('❌ Нет fileId!', true);
-            return;
-        }
-
-        if (!auto) {
-            const ok = confirm(
-                `📖 Скачать книгу как HTML?\n\n` +
-                `"${state.bookTitle}"\n` +
-                `Автор: ${state.bookAuthor}\n\n` +
-                `Метод: JSON-главы читалки LitRes\n` +
-                `Результат: HTML (открыть в браузере, Ctrl+P → PDF)`
-            );
-            if (!ok) return;
-        }
-
-        addLog(`📖 JSON-режим: старт`);
+        addLog(`📖 JSON режим: старт`);
         state.mode = 'json';
         state.jsonChapters = [];
         state.jsonEmptyStreak = 0;
         state.downloaded = 0;
-        state.total = 999; // неизвестно
+        state.total = 999;
         state.isRunning = true;
         state.isPaused = false;
         state.isStopped = false;
@@ -1605,11 +1592,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 addLog(`✅ PDF: ${state.totalPages} стр.`);
                 if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
                 if (state.totalPages) previewTotalPages.textContent = state.totalPages;
-                if (state.pageFormats) {
-                    const jpg = state.pageFormats.filter(f => f === 'jpg').length;
-                    const gif = state.pageFormats.filter(f => f === 'gif').length;
-                    previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
-                }
+                updateFormatDisplay();
             }
         }
 
@@ -1633,18 +1616,13 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             }
         }
 
-        // 📖 JSON fallback предложение
-        if (state.jsonFallback && !state.directLink) {
-            const useJson = confirm(
-                `📖 ZIP-ссылка не найдена.\n\n` +
-                `Скачать через JSON-главы читалки?\n` +
-                `Результат: HTML-файл с книгой`
-            );
-            if (useJson) {
-                return startJsonDownload(true);
-            }
+        // 🔥 JSON fallback (автоматом)
+        if (!state.pageFormats || state.pageFormats.length === 0) {
+            addLog(`📖 ZIP не найден → JSON fallback`);
+            return startJsonDownload();
         }
 
+        // Постраничка PDF
         let totalPages = state.totalPages;
         if (!totalPages || totalPages < 1) {
             const input = prompt(`📄 Всего страниц:`, '100');
@@ -1725,7 +1703,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
     // ============================================================
     btnStart.addEventListener('click', startDownload);
     btnStartAll.addEventListener('click', startDownloadAll);
-    btnReader.addEventListener('click', () => startJsonDownload(false));
     btnPause.addEventListener('click', pauseDownload);
     btnStop.addEventListener('click', stopDownload);
     btnGitHub.addEventListener('click', setupGitHub);
@@ -1749,20 +1726,13 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
         addLog(this.checked ? '📦 Tools: вкл (x64.rar в архив)' : '📦 Tools: выкл (только книга)');
     });
 
-    jsonFallbackCheckbox.addEventListener('change', function() {
-        state.jsonFallback = this.checked;
-        localStorage.setItem(JSON_FALLBACK_KEY, this.checked ? 'true' : 'false');
-        addLog(this.checked ? '📖 JSON fallback: вкл' : '📖 JSON fallback: выкл');
-    });
-
     // ============================================================
     // 24. ЭКСПОРТ
     // ============================================================
     window.downloaderUI = {
-        version: 'v31.0',
+        version: 'v31.2',
         start: startDownload,
         startAll: startDownloadAll,
-        startJson: () => startJsonDownload(false),
         pause: pauseDownload,
         stop: stopDownload,
         state: state,
@@ -1780,11 +1750,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             state.addTools = !!v;
             addToolsCheckbox.checked = !!v;
             localStorage.setItem(ADD_TOOLS_KEY, v ? 'true' : 'false');
-        },
-        setJsonFallback: function(v) {
-            state.jsonFallback = !!v;
-            jsonFallbackCheckbox.checked = !!v;
-            localStorage.setItem(JSON_FALLBACK_KEY, v ? 'true' : 'false');
         }
     };
 
@@ -1795,7 +1760,6 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
         setStatus('⏳ Загрузка...');
         addLog(`🔍 Тип: ${pageType}`);
         addLog(`📦 App Tools: ${state.addTools ? 'вкл' : 'выкл'}`);
-        addLog(`📖 JSON fallback: ${state.jsonFallback ? 'вкл' : 'выкл'}`);
 
         const infoLoaded = await fetchBookInfo();
         if (infoLoaded && bookInfo.pages > 0) {
@@ -1811,9 +1775,13 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             setStatus(`✅ "${bookInfo.title}" (${bookInfo.pages} стр.)`);
             addLog(`✅ "${bookInfo.title}" — ${bookInfo.pages} стр.`);
             addLog(`🆔 fileId: ${state.fileId}`);
+            if (bookInfo.format) {
+                updateFormatDisplay();
+                addLog(`📖 Формат: ${bookInfo.format.name}`);
+            }
         }
 
-        // 👤 Инфо о юзере
+        // 👤 Инфо о юзере (ПОЛНАЯ версия)
         setTimeout(async () => {
             const user = await fetchUserInfo();
             if (user) {
@@ -1833,8 +1801,22 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                     html += `<div><b>${subType}</b></div>`;
                     html += `<div style="font-size: ${px(9)};">📅 <b>${till.toLocaleDateString('ru-RU')}</b> • <span style="color: ${daysColor}; font-weight: 700;">${daysLeft} дн.</span></div>`;
                     if (user.subscription.price) html += `<div style="font-size: ${px(9)}; color: #8a9aaa;">💰 ${user.subscription.price} ₽</div>`;
+                    if (user.subscription.planName) html += `<div style="font-size: ${px(9)}; color: #8a9aaa;">⚙️ ${user.subscription.planName}</div>`;
+                    if (user.subscription.autoRenew) html += `<div style="font-size: ${px(9)}; color: #27ae60;">🔄 автопродление</div>`;
                     html += `</div>`;
                     addLog(`📅 Подписка до ${till.toLocaleDateString('ru-RU')} (${daysLeft} дн.)`);
+                }
+                if (user.account && (user.account.display || user.account.real || user.account.bonus)) {
+                    html += `<div style="margin-top: ${px(6)}; padding-top: ${px(6)}; border-top: 1px dashed #d4e2f0; font-size: ${px(9)};">`;
+                    if (user.account.display) html += `<div>💰 Баланс: ${user.account.display} ₽</div>`;
+                    if (user.account.bonus) html += `<div>🎁 Бонусов: ${user.account.bonus}</div>`;
+                    html += `</div>`;
+                }
+                if (user.loyalty) {
+                    html += `<div style="margin-top: ${px(6)}; padding-top: ${px(6)}; border-top: 1px dashed #d4e2f0; font-size: ${px(9)};">`;
+                    html += `<div>💸 Кэшбэк: ${user.loyalty.cashbackPercent}%</div>`;
+                    if (user.loyalty.purchaseForNext) html += `<div>🎯 До след. уровня: ${user.loyalty.purchaseForNext} ₽</div>`;
+                    html += `</div>`;
                 }
                 userInfoText.innerHTML = html;
             }
@@ -1849,11 +1831,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                     addLog(`✅ PDF: ${state.totalPages} стр.`);
                     if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
                     if (state.totalPages) previewTotalPages.textContent = state.totalPages;
-                    if (state.pageFormats) {
-                        const jpg = state.pageFormats.filter(f => f === 'jpg').length;
-                        const gif = state.pageFormats.filter(f => f === 'gif').length;
-                        previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
-                    }
+                    updateFormatDisplay();
                     setStatus(`✅ "${state.bookTitle}" (${state.totalPages} стр.)`);
                 }
             }
@@ -1865,17 +1843,13 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             const zipLink = await findZipLink();
             if (zipLink) {
                 state.directLink = zipLink;
-                addLog(`✅ Прямая ZIP-ссылка найдена (готова к загрузке)`);
+                addLog(`✅ Прямая ZIP-ссылка найдена`);
                 setStatus(`📦 ZIP готов — нажми "▶▶ Старт" для загрузки`);
             } else {
-                addLog('ℹ️ Прямая ZIP-ссылка не найдена');
-                if (state.jsonFallback) {
-                    addLog('📖 JSON fallback доступен — жми "📖 Reader"');
-                    setStatus(`📖 ZIP нет — доступен JSON режим`);
-                } else {
-                    setStatus(`ℹ️ ZIP-ссылка не найдена (PDF/reader)`);
-                }
+                addLog('ℹ️ ZIP не найден → будет JSON fallback');
+                setStatus(`📖 Готов к загрузке (JSON fallback)`);
             }
+            updateFormatDisplay();
         }, 3000);
 
         updateButtons();
@@ -1886,12 +1860,11 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             checkForSavedProgress();
         }
 
-        console.log(`✅ LitRes Downloader v31.0 загружен!`);
+        console.log(`✅ LitRes Downloader v31.2 загружен!`);
         console.log(`🧹 Автоочистка кэша: включена`);
-        console.log(`📦 ZIP-ссылка: НЕ показывается`);
+        console.log(`📦 ZIP + 📖 JSON fallback`);
         console.log(`📚 Поддержка PDF + FB2 + EPUB + HTML`);
-        console.log(`📖 JSON fallback: ${state.jsonFallback ? 'вкл' : 'выкл'}`);
-        console.log(`📦 App Tools: ${state.addTools ? 'включены' : 'выключены'} (x64.rar)`);
+        console.log(`📦 App Tools: ${state.addTools ? 'включены' : 'выключены'}`);
     }
 
     // ============================================================
@@ -1937,6 +1910,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
             state.bookInfoLoaded = false;
             state.jsonChapters = [];
             state.mode = 'zip';
+            bookInfo.format = null;
 
             previewBookTitle.textContent = '⏳ Загрузка...';
             previewBookAuthor.textContent = '...';
@@ -1955,6 +1929,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 state.totalPages = bookInfo.pages;
                 state.fileId = bookInfo.fileId;
                 state.bookInfoLoaded = true;
+                updateFormatDisplay();
                 addLog(`✅ "${bookInfo.title}"`);
             }
 
@@ -1963,11 +1938,7 @@ ${chapters.map((html, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n$
                 if (drmOk) {
                     if (state.pdfMetadata?.title) previewBookTitle.textContent = state.pdfMetadata.title;
                     previewTotalPages.textContent = state.totalPages;
-                    if (state.pageFormats) {
-                        const jpg = state.pageFormats.filter(f => f === 'jpg').length;
-                        const gif = state.pageFormats.filter(f => f === 'gif').length;
-                        previewFormats.textContent = `JPG: ${jpg}, GIF: ${gif}`;
-                    }
+                    updateFormatDisplay();
                 }
                 const zipLink = await findZipLink();
                 if (zipLink) {
