@@ -1,96 +1,87 @@
 /**
- * Suno Downloader v2.0
- * 🎵 Три режима: буфер / публичный / CDN+AES
- * (c) 2026
+ * Suno Downloader v5.0 — правильный AES-CTR (по sw.js)
  */
-(function sunoDownloaderV2() {
-    console.log('🎵 Suno Downloader v2.0 — 3 режима');
+(function sunoDownloaderV5() {
+    console.log('🎵 Suno Downloader v5.0 — правильный AES-CTR');
 
     const S = 1.25;
     const px = v => `${Math.round(v * S * 100) / 100}px`;
 
-    // ========== ID ТРЕКА ==========
-    const clipId = (() => {
-        const m = location.pathname.match(/\/(?:song|s)\/([a-zA-Z0-9_-]+)/);
-        return m ? m[1] : null;
-    })();
-    if (!clipId) return alert('❌ Открой страницу трека Suno');
-    console.log(`🆔 Clip ID: ${clipId}`);
-
-    // ========== СОСТОЯНИЕ ==========
     const state = {
-        title: '...',
-        author: '...',
-        clipId,
-        mode: 'buffer',       // buffer | public | cdn
-        // буфер
-        chunks: [],
-        totalBytes: 0,
-        isRunning: false,
-        isPaused: false,
-        isStopped: false,
-        lastChunkTime: Date.now(),
-        checkInterval: null,
-        audioElement: null,
-        audioEnded: false,
-        // CDN
+        clipId: null,
         cdnUrl: null,
         licenseKey: null,
         licenseIv: null,
-        licenseCaptured: false,
-        cdnBlob: null
+        glt: null,
+        jwt: null,
+        resultBlob: null,
+        isRunning: false
     };
 
-    // ========== ЗАГОЛОВОК ==========
-    function getTitle() {
-        const h1 = document.querySelector('h1');
-        if (h1?.textContent?.trim()) return h1.textContent.trim();
-        const el = document.querySelector('[data-testid="clip-title"]');
-        if (el?.textContent?.trim()) return el.textContent.trim();
-        const t = document.title.replace(/\s*[|·]\s*Suno.*$/i, '').trim();
-        if (t && t !== 'Suno | AI Music') return t;
-        return `suno_${clipId.slice(0, 8)}`;
+    // ===== Base64 → Uint8Array =====
+    function b64(b) {
+        const bin = atob(b);
+        const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        return u;
     }
-    function getAuthor() {
-        const el = document.querySelector('[data-testid="clip-author"]') ||
-                   document.querySelector('a[href*="/@"]');
-        return el?.textContent?.trim() || 'Suno AI';
-    }
-    state.title = getTitle();
-    state.author = getAuthor();
-    const safeTitle = state.title.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80)
-        || `suno_${clipId.slice(0,8)}`;
 
-    // ========== ПЕРЕХВАТ FETCH (CDN + ключ) ==========
+    // ===== Извлечение JWT из заголовков =====
+    function extractAuth(headers) {
+        if (!headers) return null;
+        let auth = null;
+        if (headers instanceof Headers) {
+            auth = headers.get('Authorization') || headers.get('authorization');
+        } else if (Array.isArray(headers)) {
+            for (const [k, v] of headers) if (k.toLowerCase() === 'authorization') auth = v;
+        } else if (typeof headers === 'object') {
+            auth = headers['Authorization'] || headers['authorization'] || headers['AUTHORIZATION'];
+        }
+        if (typeof auth === 'string') return auth.replace(/^Bearer\s+/i, '');
+        return null;
+    }
+
+    // ===== Перехват =====
     const origFetch = window.fetch;
     window.fetch = function(...args) {
         const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
         const opts = args[1] || {};
 
-        // 1) Зашифрованный файл с CDN
-        if (url.includes('cloudfront.net') && url.includes('.m4a')) {
-            state.cdnUrl = url;
-            console.log('🔒 CDN:', url);
-            log(`🔒 CDN: ${url.split('/').pop()}`, false);
+        // JWT
+        const auth = extractAuth(opts.headers);
+        if (auth && auth.length > 50 && !state.jwt) {
+            state.jwt = auth;
+            log('🔐 JWT перехвачен');
             updateStats();
         }
 
-        // 2) Лицензионный запрос (ключ + IV)
-        if (url.includes('/api/mango/rights') || url.includes('/license')) {
+        // CDN (напрямую или через SW HLS-параметр)
+        if ((url.includes('cloudfront.net') && url.includes('.m4a')) || url.includes('/_sw-mango/')) {
+            try {
+                const u = new URL(url);
+                const src = u.searchParams.get('src') || url;
+                const cid = u.searchParams.get('contentId');
+                if (src.includes('cloudfront') && !state.cdnUrl) {
+                    state.cdnUrl = src;
+                    const m = src.match(/\/clip\/([0-9a-f-]{36})/);
+                    if (m) state.clipId = m[1];
+                    else if (cid) state.clipId = cid;
+                    log(`🔒 CDN: ${src.split('/').pop()}`);
+                    updateStats();
+                }
+            } catch(e) {}
+        }
+
+        // License response
+        if (url.includes('/api/mango/rights')) {
             return origFetch.apply(this, args).then(resp => {
-                const clone = resp.clone();
-                clone.json().then(data => {
-                    const k = data.key || data.licenseKey || data.data?.key || data.payload?.key;
-                    const iv = data.iv || data.initializationVector || data.data?.iv || data.payload?.iv;
-                    if (k && iv) {
-                        state.licenseKey = k;
-                        state.licenseIv = iv;
-                        state.licenseCaptured = true;
-                        console.log('🔑 Ключ + IV получены');
-                        log('🔑 Ключ перехвачен', false);
-                        updateStats();
-                    }
-                }).catch(() => {});
+                resp.clone().json().then(d => {
+                    state.licenseKey = d.key;
+                    state.licenseIv = d.iv;
+                    state.glt = d.glt;
+                    log('🔑 License OK');
+                    updateStats();
+                }).catch(()=>{});
                 return resp;
             });
         }
@@ -98,440 +89,251 @@
         return origFetch.apply(this, args);
     };
 
-    // ========== ПЕРЕХВАТ SourceBuffer ==========
-    if (window.SourceBuffer?.prototype?.appendBuffer) {
-        const origAppend = SourceBuffer.prototype.appendBuffer;
-        SourceBuffer.prototype.appendBuffer = function(buffer) {
-            if (state.mode === 'buffer' && state.isRunning
-                && !state.isStopped && !state.isPaused) {
-                try {
-                    const copy = new Uint8Array(buffer);
-                    state.chunks.push(copy);
-                    state.totalBytes += copy.length;
-                    state.lastChunkTime = Date.now();
-                    updateProgress();
-                } catch(e) {}
-            }
-            return origAppend.call(this, buffer);
-        };
-    }
-
-    // ========== UI ==========
+    // ===== UI =====
     document.body.insertAdjacentHTML('beforeend', `
-        <div id="sd_ui" style="position:fixed;bottom:${px(16)};right:${px(16)};z-index:99999;
+        <div id="sd6_ui" style="position:fixed;bottom:${px(16)};right:${px(16)};z-index:99999;
             background:#fff;color:#1a2a4a;border-radius:${px(14)};padding:${px(14)} ${px(16)};
-            font-family:'Segoe UI',Arial,sans-serif;font-size:${px(12)};width:${px(380)};
+            font-family:'Segoe UI',Arial,sans-serif;font-size:${px(12)};width:${px(400)};
             box-shadow:0 ${px(8)} ${px(32)} rgba(0,0,0,0.15);border:1px solid rgba(26,42,74,0.08);">
 
             <div style="display:flex;align-items:center;gap:${px(8)};margin-bottom:${px(10)};">
                 <div style="font-size:${px(20)};">🎵</div>
                 <div style="flex:1;">
                     <div style="font-weight:800;font-size:${px(14)};">Suno <span style="color:#1a5a9a;">Downloader</span></div>
-                    <div style="font-size:${px(9)};color:#8a9aaa;text-transform:uppercase;">v2.0 • 3 режима</div>
+                    <div style="font-size:${px(9)};color:#8a9aaa;text-transform:uppercase;">v5.0 • AES-CTR</div>
                 </div>
-                <button id="sd_close" style="background:rgba(26,42,74,0.05);border:none;color:#8a9aaa;cursor:pointer;font-size:${px(14)};padding:${px(3)} ${px(7)};border-radius:${px(6)};">✕</button>
+                <button id="sd6_close" style="background:rgba(26,42,74,0.05);border:none;color:#8a9aaa;cursor:pointer;font-size:${px(14)};padding:${px(3)} ${px(7)};border-radius:${px(6)};">✕</button>
             </div>
 
-            <div style="background:#f0f7ff;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};border-left:${px(3)} solid #1a5a9a;font-size:${px(11)};line-height:1.4;">
-                <div style="font-weight:700;" id="sd_title">${state.title}</div>
-                <div style="color:#4a6a8a;" id="sd_author">${state.author}</div>
-                <div style="color:#4a6a8a;margin-top:${px(2)};" id="sd_stats">—</div>
-            </div>
-
-            <div style="background:#fafbfc;border:${px(1)} solid #e8eef4;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};">
-                <div style="font-weight:700;font-size:${px(11)};color:#1a2a4a;margin-bottom:${px(6)};">🎛 Режим:</div>
-                <label style="display:flex;align-items:center;gap:${px(6)};padding:${px(4)} 0;cursor:pointer;font-size:${px(11)};">
-                    <input type="radio" name="sd_mode" value="buffer" checked style="cursor:pointer;">
-                    <span><b>🎧 Буфер</b> <span style="color:#8a9aaa;">— перехват плеера (нужно доиграть)</span></span>
-                </label>
-                <label style="display:flex;align-items:center;gap:${px(6)};padding:${px(4)} 0;cursor:pointer;font-size:${px(11)};">
-                    <input type="radio" name="sd_mode" value="public" style="cursor:pointer;">
-                    <span><b>🔗 Публичный</b> <span style="color:#8a9aaa;">— прямой URL (без DRM)</span></span>
-                </label>
-                <label style="display:flex;align-items:center;gap:${px(6)};padding:${px(4)} 0;cursor:pointer;font-size:${px(11)};">
-                    <input type="radio" name="sd_mode" value="cdn" style="cursor:pointer;">
-                    <span><b>🔒 CDN + AES</b> <span style="color:#8a9aaa;">— быстро, без воспроизведения</span></span>
-                </label>
+            <div id="sd6_stats" style="background:#f0f7ff;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};border-left:${px(3)} solid #1a5a9a;font-size:${px(11)};line-height:1.5;">
+                ⏳ Ждём данные... Включи трек.
             </div>
 
             <div style="background:#f0f4fa;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};">
-                <div style="width:100%;height:${px(6)};background:#e8eef4;border-radius:${px(3)};overflow:hidden;margin-bottom:${px(6)};">
-                    <div id="sd_bar" style="width:0%;height:100%;background:linear-gradient(90deg,#1a5a9a,#4a8af4);border-radius:${px(3)};transition:width 0.4s;"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;font-size:${px(10)};color:#6a8aaa;margin-bottom:${px(4)};">
-                    <span id="sd_progress">📥 0 MB</span>
-                    <span id="sd_percent" style="font-weight:700;color:#1a5a9a;">0%</span>
-                </div>
-                <div id="sd_log" style="font-size:${px(10)};color:#6a8aaa;background:#e8eef4;padding:${px(3)} ${px(6)};border-radius:${px(4)};max-height:${px(58)};overflow-y:auto;font-family:'Courier New',monospace;line-height:1.3;">⏳ Готов к работе</div>
+                <div id="sd6_log" style="font-size:${px(10)};color:#6a8aaa;background:#e8eef4;padding:${px(6)};border-radius:${px(4)};max-height:${px(140)};overflow-y:auto;font-family:'Courier New',monospace;line-height:1.4;white-space:pre-wrap;">⏳ Готов</div>
             </div>
 
-            <div style="display:flex;gap:${px(4)};margin-bottom:${px(6)};">
-                <button id="sd_start" style="flex:2;padding:${px(9)} ${px(6)};background:#27ae60;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};">▶ Старт</button>
-                <button id="sd_save" style="flex:1;padding:${px(9)} ${px(6)};background:#1a3a6a;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};opacity:0.5;">💾 Сохранить</button>
+            <div style="display:flex;gap:${px(4)};">
+                <button id="sd6_go" style="flex:2;padding:${px(10)};background:#27ae60;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(12)};">⬇ Скачать</button>
+                <button id="sd6_save" style="flex:1;padding:${px(10)};background:#1a3a6a;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};opacity:0.5;">💾</button>
             </div>
 
-            <div style="display:flex;gap:${px(4)};margin-bottom:${px(6)};">
-                <button id="sd_pause" disabled style="flex:1;padding:${px(6)};background:#e8eef4;color:#8a9aaa;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};">⏸ Пауза</button>
-                <button id="sd_stop" disabled style="flex:1;padding:${px(6)};background:#f0f2f4;color:#b0c0d0;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};">⏹ Стоп</button>
-            </div>
-
-            <div id="sd_status" style="font-size:${px(10)};color:#6a8aaa;text-align:center;padding:${px(4)} 0 ${px(2)};border-top:1px solid #e8eef4;min-height:${px(16)};">⏳ Готов</div>
+            <div id="sd6_status" style="font-size:${px(10)};color:#6a8aaa;text-align:center;padding:${px(4)} 0;border-top:1px solid #e8eef4;margin-top:${px(8)};">⏳ Готов</div>
         </div>
     `);
 
     const $ = id => document.getElementById(id);
-    const ui = $('sd_ui');
-    const btnStart = $('sd_start');
-    const btnSave = $('sd_save');
-    const btnPause = $('sd_pause');
-    const btnStop = $('sd_stop');
-    const bar = $('sd_bar');
-    const progress = $('sd_progress');
-    const percent = $('sd_percent');
-    const logEl = $('sd_log');
-    const statusEl = $('sd_status');
-    const radios = document.querySelectorAll('input[name="sd_mode"]');
+    const logEl = $('sd6_log');
+    const statsEl = $('sd6_stats');
+    const statusEl = $('sd6_status');
 
-    // ========== ХЕЛПЕРЫ ==========
-    function log(text, isErr = false) {
-        const t = new Date().toLocaleTimeString();
-        logEl.textContent = `${isErr ? '❌' : 'ℹ️'} [${t}] ${text}`;
-        logEl.style.color = isErr ? '#e74c3c' : '#6a8aaa';
+    function log(t) {
+        const ts = new Date().toLocaleTimeString();
+        logEl.textContent += `\n[${ts}] ${t}`;
         logEl.scrollTop = logEl.scrollHeight;
-        console.log('[SD]', text);
-    }
-    function status(text, isErr = false) {
-        statusEl.textContent = text;
-        statusEl.style.color = isErr ? '#e74c3c' : '#6a8aaa';
-    }
-    function fmt(s) {
-        if (!s || !isFinite(s)) return '—';
-        return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+        console.log('[SD6]', t);
     }
     function updateStats() {
-        const bits = [];
-        if (state.cdnUrl) bits.push('🔒 CDN есть');
-        if (state.licenseCaptured) bits.push('🔑 Ключ есть');
-        if (state.chunks.length) bits.push(`🎧 ${state.chunks.length} чанков`);
-        const audio = state.audioElement;
-        const dur = audio && isFinite(audio.duration) ? fmt(audio.duration) : '—';
-        bits.push(`⏱️ ${dur}`);
-        $('sd_stats').textContent = bits.join(' • ');
+        const b = [];
+        if (state.jwt) b.push('🔐 JWT');
+        if (state.cdnUrl) b.push('🔒 CDN');
+        if (state.licenseKey) b.push('🔑 Key');
+        if (state.licenseIv) b.push('🎲 IV');
+        if (state.clipId) b.push(`🆔 ${state.clipId.slice(0,8)}`);
+        statsEl.textContent = b.join(' • ') || '⏳ Ждём данные...';
     }
-    function updateProgress() {
-        const mb = (state.totalBytes / 1048576).toFixed(1);
-        progress.textContent = `📥 ${mb} MB`;
-        let pct = 0;
-        const audio = state.audioElement;
-        if (audio && audio.duration && isFinite(audio.duration)) {
-            pct = Math.round((audio.currentTime / audio.duration) * 100);
-        } else if (state.mode === 'cdn' && state.cdnBlob) {
-            pct = 100;
-        } else {
-            pct = Math.min(state.chunks.length * 2, 95);
-        }
-        bar.style.width = `${Math.min(pct, 100)}%`;
-        percent.textContent = `${pct}%`;
-        updateStats();
-    }
-    function updateButtons() {
-        const run = state.isRunning && !state.isStopped;
-        btnStart.disabled = run;
-        btnPause.disabled = !run || state.mode !== 'buffer';
-        btnStop.disabled = !run;
-        const hasData = state.chunks.length > 0 || state.cdnBlob;
-        btnSave.disabled = !hasData;
-        btnStart.style.opacity = run ? '0.5' : '1';
-        btnStart.style.cursor = run ? 'not-allowed' : 'pointer';
-        btnSave.style.opacity = hasData ? '1' : '0.5';
-        btnSave.style.cursor = hasData ? 'pointer' : 'not-allowed';
+    function status(t, err) {
+        statusEl.textContent = t;
+        statusEl.style.color = err ? '#e74c3c' : '#6a8aaa';
     }
 
-    // ========== СОХРАНЕНИЕ ==========
-    function downloadBlob(blob, ext = 'm4a') {
-        const url = URL.createObjectURL(blob);
-        const fname = `${safeTitle}.${ext}`;
+    // ===== License fetch (если не перехватили) =====
+    async function fetchLicense() {
+        if (state.licenseKey && state.licenseIv) return;
+        if (!state.clipId) throw new Error('Нет clipId');
+
+        const headers = { 'Content-Type': 'application/json' };
+        let credentials = 'include';
+        if (state.jwt) {
+            headers['Authorization'] = 'Bearer ' + state.jwt;
+            credentials = 'same-origin';
+        }
+
+        log(`📡 Запрос license ${state.jwt ? '(auth)' : '(anon)'}`);
+        const resp = await fetch('https://studio-api-prod.suno.com/api/mango/rights', {
+            method: 'POST',
+            headers,
+            credentials,
+            body: JSON.stringify({
+                content_params: {
+                    content_id: state.clipId,
+                    content_type: 'clip'
+                }
+            })
+        });
+        if (!resp.ok) throw new Error('license HTTP ' + resp.status);
+        const d = await resp.json();
+        state.licenseKey = d.key;
+        state.licenseIv = d.iv;
+        state.glt = d.glt;
+        log('🔑 License OK');
+        updateStats();
+    }
+
+    // ===== Расшифровка + скачивание =====
+    async function download() {
+        if (state.isRunning) return;
+        state.isRunning = true;
+        logEl.textContent = '▶ Запуск';
+        status('⏳ Подготовка...');
+
+        try {
+            // Ждём CDN + clipId
+            if (!state.cdnUrl || !state.clipId) {
+                log('⏳ Ждём CDN... Включи трек на 3-5 сек');
+                const t0 = Date.now();
+                while ((!state.cdnUrl || !state.clipId) && Date.now() - t0 < 15000) {
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+            if (!state.cdnUrl) throw new Error('CDN не перехвачен');
+            if (!state.clipId) throw new Error('clipId не найден');
+
+            // Ждём JWT
+            if (!state.jwt) {
+                log('⏳ Ждём JWT...');
+                const t0 = Date.now();
+                while (!state.jwt && Date.now() - t0 < 8000) {
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+
+            await fetchLicense();
+            if (!state.licenseKey) throw new Error('License не получен');
+
+            // ===== Шаг 1: декодируем base64 =====
+            const wrappedKey = b64(state.licenseKey);
+            const wrappedIv = b64(state.licenseIv);
+            log(`📦 wrappedKey: ${wrappedKey.length} байт`);
+            log(`📦 wrappedIv:  ${wrappedIv.length} байт`);
+
+            // ===== Шаг 2: userKey = SHA-256(JWT) или SHA-256(glt) =====
+            let userKeyRaw;
+            if (state.jwt) {
+                log('🔐 userKey = SHA-256(JWT)');
+                userKeyRaw = await crypto.subtle.digest(
+                    'SHA-256',
+                    new TextEncoder().encode(state.jwt)
+                );
+            } else if (state.glt) {
+                log('🔐 userKey = SHA-256(glt)');
+                userKeyRaw = await crypto.subtle.digest(
+                    'SHA-256',
+                    new TextEncoder().encode(state.glt)
+                );
+            } else {
+                throw new Error('Нет JWT и нет glt');
+            }
+
+            const userKey = await crypto.subtle.importKey(
+                'raw', userKeyRaw,
+                { name: 'AES-GCM' },
+                false, ['decrypt']
+            );
+
+            const contentIdBytes = new TextEncoder().encode(state.clipId);
+
+            // ===== Шаг 3: расшифровываем wrappedKey → AES-CTR ключ =====
+            const aesKeyRaw = await crypto.subtle.decrypt(
+                {
+                    name: 'AES-GCM',
+                    iv: wrappedKey.slice(0, 12),
+                    additionalData: contentIdBytes,
+                    tagLength: 128
+                },
+                userKey,
+                wrappedKey.slice(12)
+            );
+            log(`🔑 contentKey: ${aesKeyRaw.byteLength} байт`);
+
+            // ===== Шаг 4: расшифровываем wrappedIv → AES-CTR counter =====
+            const aesIvRaw = await crypto.subtle.decrypt(
+                {
+                    name: 'AES-GCM',
+                    iv: wrappedIv.slice(0, 12),
+                    additionalData: contentIdBytes,
+                    tagLength: 128
+                },
+                userKey,
+                wrappedIv.slice(12)
+            );
+            log(`🎲 contentIv:  ${aesIvRaw.byteLength} байт`);
+
+            // ===== Шаг 5: импорт AES-CTR ключа =====
+            const aesCtrKey = await crypto.subtle.importKey(
+                'raw', aesKeyRaw,
+                { name: 'AES-CTR' },
+                false, ['decrypt']
+            );
+
+            // ===== Шаг 6: скачиваем зашифрованный файл =====
+            log(`📥 Скачиваем ${state.cdnUrl.split('/').pop()}`);
+            const cdnResp = await fetch(state.cdnUrl);
+            if (!cdnResp.ok) throw new Error('CDN HTTP ' + cdnResp.status);
+            const encData = await cdnResp.arrayBuffer();
+            log(`📦 Зашифровано: ${(encData.byteLength/1048576).toFixed(2)} MB`);
+
+            // ===== Шаг 7: AES-CTR расшифровка =====
+            const decData = await crypto.subtle.decrypt(
+                {
+                    name: 'AES-CTR',
+                    counter: new Uint8Array(aesIvRaw),
+                    length: 128
+                },
+                aesCtrKey,
+                encData
+            );
+            log(`🎉 Расшифровано: ${(decData.byteLength/1048576).toFixed(2)} MB`);
+
+            // Проверка заголовка
+            const head = new Uint8Array(decData.slice(0, 12));
+            const ascii = Array.from(head).map(b => (b>=32&&b<127)?String.fromCharCode(b):'.').join('');
+            log(`🔍 Header: ${ascii}`);
+
+            const mime = ascii.includes('ftyp') ? 'audio/mp4' :
+                         (head[0]===0x1a ? 'audio/webm' : 'audio/mp4');
+            state.resultBlob = new Blob([decData], { type: mime });
+            status('✅ Готово! Жми Сохранить');
+            $('sd6_save').style.opacity = '1';
+            log(`✅ Файл готов`);
+
+        } catch(e) {
+            log(`❌ Ошибка: ${e.message}`);
+            status('❌ Ошибка', true);
+            console.error(e);
+        }
+        state.isRunning = false;
+    }
+
+    function save() {
+        if (!state.resultBlob) return log('❌ Нет данных');
+        const title = (document.querySelector('h1')?.textContent?.trim() || 'suno_track')
+            .replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+        const url = URL.createObjectURL(state.resultBlob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fname;
-        a.style.display = 'none';
-        document.body.appendChild(a);
+        a.download = `${title}.m4a`;
         a.click();
-        setTimeout(() => a.remove(), 1000);
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-        const mb = (blob.size / 1048576).toFixed(1);
-        log(`✅ Сохранено: ${fname} (${mb} MB)`);
-        status(`✅ Готово! ${mb} MB`);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        log(`💾 Сохранено: ${title}.m4a`);
     }
 
-    function detectExt(buf) {
-        if (buf.length >= 12) {
-            const t = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
-            if (t === 'webm') return { ext: 'webm', mime: 'audio/webm' };
-            if (t === 'ftyp') return { ext: 'm4a', mime: 'audio/mp4' };
-        }
-        return { ext: 'm4a', mime: 'audio/mp4' };
-    }
+    $('sd6_go').onclick = download;
+    $('sd6_save').onclick = save;
+    $('sd6_close').onclick = () => $('sd6_ui').remove();
 
-    function saveBuffer() {
-        if (!state.chunks.length) return log('❌ Нет данных буфера', true);
-        const totalLen = state.chunks.reduce((s, c) => s + c.length, 0);
-        const merged = new Uint8Array(totalLen);
-        let off = 0;
-        for (const c of state.chunks) { merged.set(c, off); off += c.length; }
-        const { ext, mime } = detectExt(merged);
-        downloadBlob(new Blob([merged], { type: mime }), ext);
-    }
-
-    function saveCdn() {
-        if (!state.cdnBlob) return log('❌ Нет данных CDN', true);
-        const { ext, mime } = detectExt(new Uint8Array(state.cdnBlob.slice(0, 12)));
-        downloadBlob(state.cdnBlob, ext);
-    }
-
-    function savePublic() {
-        const audio = findAudio();
-        if (!audio) return log('❌ Аудио не найдено', true);
-        const src = audio.src || audio.currentSrc;
-        if (!src || src.startsWith('blob:')) {
-            return log('⚠️ Прямая ссылка недоступна, используй буфер', true);
-        }
-        log(`🔗 Прямой URL: ${src.split('/').pop()}`);
-        const a = document.createElement('a');
-        a.href = src;
-        a.download = `${safeTitle}.m4a`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => a.remove(), 1000);
-        status('✅ Скачивание запущено');
-    }
-
-    // ========== РЕЖИМ: БУФЕР ==========
-    function findAudio() {
-        const audios = document.querySelectorAll('audio');
-        if (!audios.length) return null;
-        for (const a of audios) if (!a.paused) return a;
-        return audios[0];
-    }
-
-    function startBuffer() {
-        state.chunks = [];
-        state.totalBytes = 0;
-        state.isRunning = true;
-        state.isPaused = false;
-        state.isStopped = false;
-        updateProgress();
-        updateButtons();
-        status('🎧 Буфер: захват активен');
-        log('▶ Включи трек и дай ему доиграть до конца');
-
-        state.audioElement = findAudio();
-        if (state.audioElement) {
-            const audio = state.audioElement;
-            log(`🔊 Аудио найдено (${audio.duration ? fmt(audio.duration) : '?'})`);
-            audio.addEventListener('ended', () => {
-                if (state.isRunning && !state.isStopped) {
-                    log('🏁 Трек доигран, завершаем захват...');
-                    setTimeout(() => {
-                        if (state.isRunning) {
-                            state.isRunning = false;
-                            updateButtons();
-                            log('💾 Нажми «Сохранить»');
-                            status('✅ Захват завершён');
-                        }
-                    }, 1500);
-                }
-            }, { once: true });
-            if (audio.paused) audio.play().catch(() => log('⚠️ Нажми Play вручную', true));
-        } else {
-            log('⚠️ Аудиоэлемент не найден', true);
-        }
-        state.checkInterval = setInterval(updateProgress, 500);
-    }
-
-    // ========== РЕЖИМ: ПУБЛИЧНЫЙ ==========
-    async function startPublic() {
-        state.isRunning = true;
-        updateButtons();
-        status('🔗 Публичный режим');
-        log('🔍 Ищем прямой URL...');
-
-        const audio = findAudio();
-        if (!audio) {
-            log('❌ Аудио не найдено', true);
-            state.isRunning = false;
-            updateButtons();
-            return;
-        }
-        state.audioElement = audio;
-
-        if (audio.src && !audio.src.startsWith('blob:')) {
-            log(`✅ Прямой URL: ${audio.src.split('/').pop()}`);
-            state.cdnBlob = null; // не blob, просто прямой
-            status('✅ Нажми «Сохранить»');
-        } else {
-            log('⚠️ Аудио использует blob (MSE). Попробуй CDN режим.', true);
-            status('⚠️ Blob URL — используй CDN', true);
-        }
-        state.isRunning = false;
-        updateButtons();
-    }
-
-    // ========== РЕЖИМ: CDN + AES ==========
-    async function startCdn() {
-        state.isRunning = true;
-        updateButtons();
-        status('🔒 CDN режим');
-
-        // 1. Нужен CDN URL
-        if (!state.cdnUrl) {
-            log('⏳ Ждём CDN URL... Запусти трек на 2 сек.', false);
-            if (!state.audioElement) state.audioElement = findAudio();
-            if (state.audioElement?.paused) state.audioElement?.play().catch(()=>{});
-
-            // Ждём до 10 сек
-            const start = Date.now();
-            while (!state.cdnUrl && Date.now() - start < 10000) {
-                await new Promise(r => setTimeout(r, 200));
-            }
-            if (!state.cdnUrl) {
-                log('❌ CDN URL не перехвачен', true);
-                state.isRunning = false;
-                updateButtons();
-                return;
-            }
-        }
-
-        // 2. Нужен ключ
-        if (!state.licenseCaptured) {
-            log('⏳ Ждём ключ лицензии...', false);
-            const start = Date.now();
-            while (!state.licenseCaptured && Date.now() - start < 8000) {
-                await new Promise(r => setTimeout(r, 200));
-            }
-            if (!state.licenseCaptured) {
-                log('⚠️ Ключ не перехвачен. Попробуем без расшифровки...', true);
-            }
-        }
-
-        // 3. Скачиваем CDN
-        log(`📥 Качаем: ${state.cdnUrl.split('/').pop()}`);
-        try {
-            const resp = await fetch(state.cdnUrl, { credentials: 'omit' });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const rawBlob = await resp.blob();
-            const mb = (rawBlob.size / 1048576).toFixed(1);
-            log(`✅ Скачано ${mb} MB`);
-
-            // 4. Расшифровка если есть ключ
-            if (state.licenseCaptured) {
-                log('🔓 Расшифровка AES-GCM...');
-                const encBuf = await rawBlob.arrayBuffer();
-
-                // декодируем key/iv (base64 или hex)
-                const toBuf = str => {
-                    try { return Uint8Array.from(atob(str), c => c.charCodeAt(0)); } catch(e) {}
-                    if (typeof str === 'string' && str.length % 2 === 0 && /^[0-9a-f]+$/i.test(str)) {
-                        return new Uint8Array(str.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-                    }
-                    return new Uint8Array(str);
-                };
-                const keyBuf = toBuf(state.licenseKey);
-                const ivBuf = toBuf(state.licenseIv);
-
-                const cryptoKey = await crypto.subtle.importKey(
-                    'raw', keyBuf, { name: 'AES-GCM' }, false, ['decrypt']
-                );
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: ivBuf, tagLength: 128 },
-                    cryptoKey,
-                    encBuf
-                );
-                state.cdnBlob = new Blob([decrypted], { type: 'audio/mp4' });
-                log(`✅ Расшифровано: ${(decrypted.byteLength / 1048576).toFixed(1)} MB`);
-            } else {
-                state.cdnBlob = rawBlob;
-                log('⚠️ Сохранено как есть (без расшифровки)', true);
-            }
-
-            updateProgress();
-            status('✅ Нажми «Сохранить»');
-        } catch(e) {
-            log(`❌ Ошибка CDN: ${e.message}`, true);
-            status('❌ Ошибка CDN', true);
-        }
-        state.isRunning = false;
-        updateButtons();
-    }
-
-    // ========== СТАРТ ==========
-    function start() {
-        state.isStopped = false;
-        if (state.mode === 'buffer') return startBuffer();
-        if (state.mode === 'public') return startPublic();
-        if (state.mode === 'cdn') return startCdn();
-    }
-
-    // ========== ПАУЗА / СТОП ==========
-    function pause() {
-        if (!state.isRunning || state.mode !== 'buffer') return;
-        state.isPaused = !state.isPaused;
-        btnPause.textContent = state.isPaused ? '▶ Далее' : '⏸ Пауза';
-        status(state.isPaused ? '⏸ Пауза' : '▶ Продолжаем');
-    }
-    function stop() {
-        if (!state.isRunning) return;
-        state.isStopped = true;
-        state.isRunning = false;
-        state.isPaused = false;
-        if (state.checkInterval) clearInterval(state.checkInterval);
-        updateButtons();
-        status('⏹ Остановлено');
-        log(`⏹ Собрано: ${state.chunks.length} чанков`);
-    }
-
-    // ========== СОХРАНЕНИЕ ==========
-    function save() {
-        if (state.mode === 'buffer') return saveBuffer();
-        if (state.mode === 'cdn') return saveCdn();
-        if (state.mode === 'public') return savePublic();
-    }
-
-    // ========== ОБРАБОТЧИКИ ==========
-    radios.forEach(r => r.addEventListener('change', e => {
-        state.mode = e.target.value;
-        log(`🎛 Режим: ${state.mode}`);
-        updateButtons();
-    }));
-    btnStart.addEventListener('click', start);
-    btnSave.addEventListener('click', save);
-    btnPause.addEventListener('click', pause);
-    btnStop.addEventListener('click', stop);
-    $('sd_close').addEventListener('click', () => {
-        if (state.isRunning && !confirm('Захват идёт. Закрыть?')) return;
-        state.isStopped = true;
-        if (state.checkInterval) clearInterval(state.checkInterval);
-        ui.remove();
-    });
-
-    // ========== INIT ==========
-    updateButtons();
-    status('⏳ Готов. Выбери режим и нажми «Старт».');
-    log(`🎵 ${state.title}`);
-
-    // Автоопределение режима по URL
-    setTimeout(() => {
-        if (location.pathname.startsWith('/s/')) {
-            log('💡 Похоже, это публичная ссылка — попробуй режим «Публичный»');
-        }
-        state.title = getTitle();
-        state.author = getAuthor();
-        $('sd_title').textContent = state.title;
-        $('sd_author').textContent = state.author;
-        updateStats();
-    }, 1500);
-
-    window.sunoDL = { state, start, stop, save };
-    console.log('✅ Suno Downloader v2.0 запущен');
+    updateStats();
+    log('✅ Готов. Включи трек, потом жми «Скачать»');
+    status('⏳ Ждём данные');
+    console.log('✅ Suno Downloader v5.0 запущен');
 })();
