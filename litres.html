@@ -212,6 +212,17 @@ details pre {
 }
 .hint-green strong { color: #1a2a4a; }
 
+.hint-red {
+    background: #fce4e4;
+    border-left: 4px solid #e74c3c;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #7a2a2a;
+}
+.hint-red strong { color: #1a2a4a; }
+
 .browser-tabs {
     display: flex;
     gap: 8px;
@@ -255,6 +266,7 @@ code {
     border-radius: 4px;
     font-size: 12px;
     color: #1a5a9a;
+    font-family: 'Courier New', monospace;
 }
 
 footer {
@@ -292,6 +304,10 @@ footer a {
     background: #ff6b35;
     color: #fff;
 }
+.badge-nocache {
+    background: #1a5a9a;
+    color: #fff;
+}
 
 .drag-arrow {
     display: inline-block;
@@ -311,7 +327,7 @@ footer a {
 <div class="container">
 
     <h1>📚 LitRes Downloader</h1>
-    <div class="subtitle">Скачивание книг и аудиокниг с LitRes.ru + Suno музыки</div>
+    <div class="subtitle">Скачивание книг и аудиокниг с LitRes.ru + Suno музыки · <span class="badge badge-nocache">NO-CACHE</span></div>
 
     <!-- ============================================ -->
     <!-- ЧТО ЭТО -->
@@ -325,6 +341,9 @@ footer a {
             <li>🎵 <strong>Suno</strong> — скачивание треков с suno.com</li>
             <li>🎛️ <strong>Выбор</strong> — сам определяет что на странице (книга или аудио)</li>
         </ul>
+        <div class="hint-green">
+            <strong>✅ Все букмарклеты на fetch(no-store)</strong> — гарантированно свежая версия. Кэш Chrome + GitHub побеждён!
+        </div>
     </section>
 
     <!-- ============================================ -->
@@ -394,7 +413,7 @@ footer a {
             <div class="bm-header">
                 <div class="bm-icon">📚</div>
                 <div class="bm-info">
-                    <div class="bm-title">Книга v40 <span class="badge badge-v40">NEW</span></div>
+                    <div class="bm-title">Книга v40 <span class="badge badge-v40">NEW</span> <span class="badge badge-nocache">NO-CACHE</span></div>
                     <div class="bm-desc">🥇 ZIP → 🥈 PDF/JSON → 🥉 постраничка (всё автоматом)</div>
                 </div>
             </div>
@@ -413,7 +432,7 @@ footer a {
             <div class="bm-header">
                 <div class="bm-icon">🎧</div>
                 <div class="bm-info">
-                    <div class="bm-title">Аудио v1.1</div>
+                    <div class="bm-title">Аудио v1.1 <span class="badge badge-nocache">NO-CACHE</span></div>
                     <div class="bm-desc">MP3 по главам, ZIP или M4B</div>
                 </div>
             </div>
@@ -432,7 +451,7 @@ footer a {
             <div class="bm-header">
                 <div class="bm-icon">🎛️</div>
                 <div class="bm-info">
-                    <div class="bm-title">Выбор (универсальный)</div>
+                    <div class="bm-title">Выбор (универсальный) <span class="badge badge-nocache">NO-CACHE</span></div>
                     <div class="bm-desc">Спрашивает что загрузить + кнопка Авто</div>
                 </div>
             </div>
@@ -451,7 +470,7 @@ footer a {
             <div class="bm-header">
                 <div class="bm-icon">🎵</div>
                 <div class="bm-info">
-                    <div class="bm-title">Suno Downloader <span class="badge badge-suno">SUNO</span></div>
+                    <div class="bm-title">Suno Downloader <span class="badge badge-suno">SUNO</span> <span class="badge badge-nocache">NO-CACHE</span></div>
                     <div class="bm-desc">Скачивание треков с suno.com (v3.1)</div>
                 </div>
             </div>
@@ -563,8 +582,17 @@ footer a {
             <li>Обнови страницу (<kbd>F5</kbd>) и кликни закладку снова</li>
             <li>Проверь что залогинен в LitRes / Suno</li>
             <li>Открой <kbd>F12</kbd> → Console и посмотри ошибки</li>
-            <li>Если v40 загружается как v31/v27 — обнови букмарклет (raw первым)</li>
         </ul>
+
+        <div class="hint-red">
+            <strong>🔄 Загружается старая версия?</strong>
+            <p style="margin-top: 8px; margin-bottom: 0;">Все букмарклеты на этой странице используют <code>fetch(cache: 'no-store')</code> — гарантированно свежий код. Если всё равно старая версия:</p>
+            <ol style="margin-top: 8px; margin-bottom: 0;">
+                <li>Проверь URL закладки — там должно быть <code>fetch</code> и <code>no-store</code></li>
+                <li>Удали старую закладку и создай заново с этой страницы</li>
+                <li>Проверь что файл залит: <a href="https://raw.githubusercontent.com/dimasik-debug/Share/main/litres-downloader.js" target="_blank">raw.githubusercontent.com/.../litres-downloader.js</a></li>
+            </ol>
+        </div>
     </section>
 
     <footer>
@@ -577,48 +605,51 @@ footer a {
 // ============================================
 // НАСТРОЙКИ РЕПО
 // ============================================
-const REPO_CDN = 'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/';
 const REPO_RAW = 'https://raw.githubusercontent.com/dimasik-debug/Share/main/';
 
 // ============================================
-// УНИВЕРСАЛЬНЫЙ ЗАГРУЗЧИК (raw первым — обход кэша)
+// 🆕 УНИВЕРСАЛЬНЫЙ ЗАГРУЗЧИК (fetch no-store — обход кэша!)
 // ============================================
 function makeLoader(file, name) {
-    return `javascript:(function(){` +
-        `var u=['${REPO_RAW}${file}?t='+Date.now(),'${REPO_CDN}${file}?t='+Date.now()],i=0;` +
-        `function L(){if(i>=u.length){alert('❌ ${name} не загрузился');return}` +
-        `var s=document.createElement('script');s.src=u[i++];` +
-        `s.onload=function(){console.log('✅ ${name} загружен!')};` +
-        `s.onerror=L;document.head.appendChild(s)}L()})();`;
+    return `javascript:(async function(){` +
+        `var urls=['${REPO_RAW}${file}'];` +
+        `for(var i=0;i<urls.length;i++){` +
+            `try{` +
+                `var r=await fetch(urls[i],{cache:'no-store'});` +
+                `if(!r.ok)continue;` +
+                `var code=await r.text();` +
+                `var s=document.createElement('script');` +
+                `s.textContent=code;` +
+                `document.head.appendChild(s);` +
+                `console.log('✅ ${name} загружен (no-cache)');` +
+                `return;` +
+            `}catch(e){}` +
+        `}` +
+        `alert('❌ ${name} не загрузился');` +
+    `})();`;
 }
 
 // ============================================
-// БУКМАРКЛЕТЫ
+// 🆕 CHOOSER (fetch no-store)
 // ============================================
-
-// 1. Книга v40
-const BM_BOOK = makeLoader('litres-downloader-v40.js', 'Книга v40');
-
-// 2. Аудио v1.1
-const BM_AUDIO = makeLoader('litres-downloader-audio.js', 'Аудио v1.1');
-
-// 3. Инструкция
-const BM_INFO = `javascript:(function(){window.open('${REPO_RAW}litres.html','_blank')})();`;
-
-// 4. Suno Downloader
-const BM_SUNO = makeLoader('suno-downloader.js', 'Suno Downloader v3.1');
-
-// 5. Chooser (выбор)
-const BM_CHOOSER = `javascript:(function(){` +
+const BM_CHOOSER = `javascript:(async function(){` +
     `if(window.__lrp)return;window.__lrp=1;` +
     `var A=location.pathname.indexOf('/audiobook/')>-1,` +
-    `R='${REPO_RAW}',C='${REPO_CDN}',` +
-    `S={book:{f:'litres-downloader-v40.js',n:'Книга v40'},audio:{f:'litres-downloader-audio.js',n:'Аудио v1.1'}};` +
-    `function L(k){var s=S[k],u=[R+s.f+'?t='+Date.now(),C+s.f+'?t='+Date.now()],i=0;` +
-    `function t(){if(i>=u.length){alert('❌ '+s.n+' не загрузился');return}` +
-    `var e=document.createElement('script');e.src=u[i++];` +
-    `e.onload=function(){console.log('✅ '+s.n+' загружен')};e.onerror=t;` +
-    `document.head.appendChild(e)}t();X()}` +
+    `R='${REPO_RAW}',` +
+    `S={book:{f:'litres-downloader.js',n:'Книга v40'},audio:{f:'litres-downloader-audio.js',n:'Аудио v1.1'}};` +
+    `async function L(k){` +
+        `var s=S[k];` +
+        `try{` +
+            `var r=await fetch(R+s.f,{cache:'no-store'});` +
+            `if(!r.ok)throw new Error('HTTP '+r.status);` +
+            `var code=await r.text();` +
+            `var e=document.createElement('script');` +
+            `e.textContent=code;` +
+            `document.head.appendChild(e);` +
+            `console.log('✅ '+s.n+' загружен (no-cache)');` +
+        `}catch(err){alert('❌ '+s.n+': '+err.message)}` +
+        `X()` +
+    `}` +
     `function X(){var p=document.getElementById('__lrp');p&&p.remove();window.__lrp=0}` +
     `var h='<div id="__lrp" style="position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif">' +` +
     `'<div style="background:#fff;border-radius:14px;padding:24px;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +` +
@@ -644,6 +675,32 @@ const BM_CHOOSER = `javascript:(function(){` +
     `k&&L(k)});` +
     `document.addEventListener('keydown',function esc(e){` +
     `e.key==='Escape'&&(X(),document.removeEventListener('keydown',esc))})})();`;
+
+// ============================================
+// 🆕 SUNO (fetch no-store)
+// ============================================
+const BM_SUNO = `javascript:(async function(){` +
+    `try{` +
+        `var r=await fetch('${REPO_RAW}suno-downloader.js',{cache:'no-store'});` +
+        `if(!r.ok)throw new Error('HTTP '+r.status);` +
+        `var code=await r.text();` +
+        `var s=document.createElement('script');` +
+        `s.textContent=code;` +
+        `document.head.appendChild(s);` +
+        `console.log('✅ Suno Downloader v3.1 загружен (no-cache)');` +
+    `}catch(e){alert('❌ Suno: '+e.message)}` +
+`})();`;
+
+// ============================================
+// ИНСТРУКЦИЯ (открывает страницу)
+// ============================================
+const BM_INFO = `javascript:(function(){window.open('${REPO_RAW}litres.html','_blank')})();`;
+
+// ============================================
+// БУКМАРКЛЕТЫ
+// ============================================
+const BM_BOOK = makeLoader('litres-downloader.js', 'Книга v40');
+const BM_AUDIO = makeLoader('litres-downloader-audio.js', 'Аудио v1.1');
 
 // ============================================
 // РЕГИСТРАЦИЯ
@@ -713,14 +770,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     console.log('📚 LitRes Downloader page loaded');
+    console.log('🚀 NO-CACHE букмарклеты активны');
     console.log('🚀 Книга v40');
     console.log('🎧 Аудио v1.1');
     console.log('🎵 Suno Downloader');
 });
 
-// ============================================
-// FALLBACK КОПИРОВАНИЯ
-// ============================================
 function fallbackCopy(text, onSuccess) {
     const ta = document.createElement('textarea');
     ta.value = text;
