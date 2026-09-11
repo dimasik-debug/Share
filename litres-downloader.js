@@ -1,15 +1,15 @@
 /**
- * LitRes Downloader v40.4
+ * LitRes Downloader v40.5
  * 🧹 Автоочистка кэша
  * 🎯 ОДНА КНОПКА СТАРТ
- * 🥇 ZIP → fetch(omit) → Blob
- * 🥈 000.js → PDF (blob) / JSON главы → HTML
+ * 🥇 ZIP → fetch(omit) → сохранить ZIP (без распаковки!)
+ * 🥈 000.js → PDF сохранить / JSON главы → HTML
  * 🥉 PDF постраничка → JPG/GIF → ZIP
  * (c) 2026 Diminssoft
  */
 
 (function fullDownloaderV40() {
-    console.log('🚀 LitRes Downloader v40.4');
+    console.log('🚀 LitRes Downloader v40.5');
     document.getElementById('litres_downloader_ui')?.remove();
 
     // 🧹 Автоочистка
@@ -405,29 +405,21 @@
         }
     }
 
-    // 🆕 Детект контента (PDF как Blob!)
+    // Детект контента (PDF как Blob!)
     async function detectContentType(url) {
         try {
             console.log('🔍 detect:', url.substring(0, 80));
             const r = await fetch(url, { credentials: 'include' });
             if (!r.ok) return { type: 'error', status: r.status };
-            // 🆕 Blob (не портит бинарные данные)
             const blob = await r.blob();
-
-            // Проверяем первые 5 байт
             const head = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
             const headStr = String.fromCharCode(...head);
             console.log('🔍 head:', headStr, 'size:', (blob.size/1024/1024).toFixed(2), 'MB');
 
-            // PDF
-            if (headStr === '%PDF-') {
-                return { type: 'pdf', blob };
-            }
+            if (headStr === '%PDF-') return { type: 'pdf', blob };
 
-            // JSON — декодируем как текст
             const text = await blob.text();
             const trimmed = text.trim();
-
             if (trimmed.startsWith('[')) return { type: 'json', text };
             if (trimmed.startsWith('{')) return { type: 'json-obj', text };
             return { type: 'unknown', text: trimmed.substring(0, 100) };
@@ -484,136 +476,6 @@
         } catch(e) { return null; }
     }
 
-    // FB2 → HTML
-    function parseFb2Section(node, images) {
-        if (!node) return '';
-        let out = '';
-        for (const c of node.children || []) {
-            const tag = (c.tagName || '').toLowerCase();
-            switch (tag) {
-                case 'section': out += parseFb2Section(c, images); break;
-                case 'title': { const t = c.textContent.trim(); if (t) out += `<h2>${escHtml(t)}</h2>`; break; }
-                case 'subtitle': out += `<h3>${escHtml(c.textContent)}</h3>`; break;
-                case 'p': out += `<p>${parseFb2Inline(c, images)}</p>`; break;
-                case 'empty-line': out += '<br>'; break;
-                case 'image': {
-                    const href = c.getAttribute('xlink:href') || c.getAttribute('href') || '';
-                    const id = href.replace('#', '');
-                    if (id && images[id]) out += `<div style="text-align:center;margin:20px 0;"><img src="${images[id]}" style="max-width:100%;"></div>`;
-                    break;
-                }
-                case 'epigraph': out += `<blockquote>${parseFb2Section(c, images)}</blockquote>`; break;
-                case 'cite': out += `<blockquote class="cite">${parseFb2Section(c, images)}</blockquote>`; break;
-                case 'poem': case 'stanza': out += `<div class="poem">${parseFb2Section(c, images)}</div>`; break;
-                case 'v': out += `<p style="text-align:center;font-style:italic;">${parseFb2Inline(c, images)}</p>`; break;
-                case 'annotation': out += `<div class="annotation"><b>Аннотация</b>${parseFb2Section(c, images)}</div>`; break;
-                case 'table': out += `<table>${parseFb2Section(c, images)}</table>`; break;
-                case 'tr': out += `<tr>${parseFb2Section(c, images)}</tr>`; break;
-                case 'td': out += `<td>${parseFb2Section(c, images)}</td>`; break;
-                default: out += parseFb2Section(c, images);
-            }
-        }
-        return out;
-    }
-    function parseFb2Inline(node, images) {
-        let out = '';
-        for (const c of node.childNodes || []) {
-            if (c.nodeType === 3) out += escHtml(c.textContent);
-            else if (c.nodeType === 1) {
-                const tag = (c.tagName || '').toLowerCase();
-                switch (tag) {
-                    case 'emphasis': out += `<em>${parseFb2Inline(c, images)}</em>`; break;
-                    case 'strong': out += `<strong>${parseFb2Inline(c, images)}</strong>`; break;
-                    case 'strikethrough': out += `<s>${parseFb2Inline(c, images)}</s>`; break;
-                    case 'sub': out += `<sub>${parseFb2Inline(c, images)}</sub>`; break;
-                    case 'sup': out += `<sup>${parseFb2Inline(c, images)}</sup>`; break;
-                    case 'a': {
-                        const href = c.getAttribute('xlink:href') || c.getAttribute('href') || '#';
-                        out += `<a href="${escHtml(href)}">${parseFb2Inline(c, images)}</a>`;
-                        break;
-                    }
-                    case 'image': {
-                        const href = c.getAttribute('xlink:href') || c.getAttribute('href') || '';
-                        const id = href.replace('#', '');
-                        if (id && images[id]) out += `<img src="${images[id]}" style="max-width:100%;">`;
-                        break;
-                    }
-                    default: out += parseFb2Inline(c, images);
-                }
-            }
-        }
-        return out;
-    }
-    function buildFb2Html(title, author, bodyHtml, authors) {
-        const st = escHtml(title), sa = escHtml(author);
-        return `<!DOCTYPE html>
-<html lang="ru"><head><meta charset="UTF-8"><title>${st}</title>
-<style>
-* { box-sizing: border-box; }
-body { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; line-height: 1.7; max-width: 720px; margin: 0 auto; padding: 60px 30px; background: #fafafa; color: #222; }
-h1.book-title { font-size: 32px; margin: 0 0 10px; color: #1a2a4a; border-bottom: 3px solid #1a5a9a; padding-bottom: 15px; }
-h2 { font-size: 24px; margin: 50px 0 20px; color: #1a2a4a; page-break-before: always; }
-h2:first-of-type { page-break-before: auto; }
-h3 { font-size: 20px; margin: 30px 0 15px; color: #2a4a6a; }
-p { margin: 14px 0; text-align: justify; }
-em { font-style: italic; } strong { font-weight: bold; }
-blockquote { margin: 20px 0; padding: 10px 20px; border-left: 4px solid #1a5a9a; background: #f0f7ff; font-style: italic; }
-.cite { background: #fff8e8; border-left-color: #f0a500; }
-.poem { text-align: center; margin: 20px 0; }
-.annotation { background: #f8faff; padding: 15px 20px; border-radius: 8px; border: 1px solid #e8eef4; margin: 20px 0; }
-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-td, th { padding: 8px; border: 1px solid #ddd; }
-.meta { color: #6a8aaa; font-size: 14px; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 1px solid #ddd; }
-.footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #aab8c4; text-align: center; }
-@media print { body { padding: 0; background: #fff; } h2 { page-break-before: always; } }
-</style></head><body>
-<h1 class="book-title">${st}</h1>
-<div class="meta">✍️ ${sa}</div>
-${bodyHtml}
-<div class="footer">📚 LitRes Downloader v40.4<br>${authors.length ? 'Автор: ' + authors.map(escHtml).join(', ') + '<br>' : ''}© 2026 Diminssoft</div>
-</body></html>`;
-    }
-    async function convertFb2ZipToHtml(zipBlob) {
-        setStatus('📦 Распаковка FB2...');
-        addLog(`📦 ${(zipBlob.size/1024/1024).toFixed(1)} MB`);
-        const zip = await JSZip.loadAsync(zipBlob);
-        let fb2File = null;
-        zip.forEach((path, file) => {
-            if (!file.dir && path.toLowerCase().endsWith('.fb2')) fb2File = file;
-        });
-        if (!fb2File) throw new Error('FB2 не найден');
-        addLog(`📖 Парсим FB2...`);
-        const xmlText = await fb2File.async('text');
-        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if (doc.querySelector('parsererror')) throw new Error('Ошибка XML');
-
-        const titleInfo = doc.querySelector('description > title-info');
-        const bookTitle = titleInfo?.querySelector('book-title')?.textContent?.trim() || state.bookTitle;
-        const authors = [];
-        titleInfo?.querySelectorAll('author').forEach(a => {
-            const fn = a.querySelector('first-name')?.textContent || '';
-            const mn = a.querySelector('middle-name')?.textContent || '';
-            const ln = a.querySelector('last-name')?.textContent || '';
-            const name = [fn, mn, ln].filter(Boolean).join(' ');
-            if (name) authors.push(name);
-        });
-        const bookAuthor = authors.join(', ') || state.bookAuthor;
-
-        const images = {};
-        doc.querySelectorAll('binary').forEach(bin => {
-            const id = bin.getAttribute('id');
-            const ct = bin.getAttribute('content-type') || 'image/jpeg';
-            const b64 = (bin.textContent || '').replace(/\s/g, '');
-            if (id && b64) images[id] = `data:${ct};base64,${b64}`;
-        });
-        addLog(`🖼️ Картинок: ${Object.keys(images).length}`);
-
-        let bodyHtml = '';
-        const bodies = doc.querySelectorAll('body');
-        if (bodies.length > 0) bodyHtml = parseFb2Section(bodies[0], images);
-        return buildFb2Html(bookTitle, bookAuthor, bodyHtml, authors);
-    }
-
     // HTML из JSON глав
     function buildBookHtml(chapters, meta) {
         const safeTitle = escHtml(meta.title || 'Книга');
@@ -636,7 +498,7 @@ em { font-style: italic; } strong { font-weight: bold; }
 <h1 class="book-title">${safeTitle}</h1>
 <div class="meta">✍️ ${safeAuthor}</div>
 ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v40.4<br>Всего глав: ${chapters.length} • © 2026 Diminssoft</div>
+<div class="footer">📚 LitRes Downloader v40.5<br>Всего глав: ${chapters.length} • © 2026 Diminssoft</div>
 </body></html>`;
     }
 
@@ -662,7 +524,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
                 <div style="font-size: ${px(20)};">📚</div>
                 <div style="flex: 1;">
                     <div style="font-weight: 800; font-size: ${px(14)}; line-height: 1.1;">LitRes <span style="color: #1a5a9a;">Downloader</span></div>
-                    <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase;">v40.4 • ZIP → PDF/JSON → постраничка</div>
+                    <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase;">v40.5 • ZIP → PDF/JSON → постраничка</div>
                 </div>
                 <button id="btn_github" style="background: #24292e; color: #fff; border: none; cursor: pointer; font-size: ${px(12)}; padding: ${px(4)} ${px(8)}; border-radius: ${px(6)}; font-weight: 700;" title="GitHub токен">🔑</button>
                 <button id="close_ui" style="background: rgba(26,42,74,0.05); border: none; color: #8a9aaa; cursor: pointer; font-size: ${px(14)}; padding: ${px(3)} ${px(7)}; border-radius: ${px(6)};">✕</button>
@@ -997,21 +859,6 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
 
         const html = await fetchJsonChapter(state.downloaded);
 
-        // PDF защита
-        if (html && html.startsWith('%PDF')) {
-            addLog(`⚠️ Вместо глав — PDF → сохраняем`, true);
-            const blob = new Blob([html], { type: 'application/pdf' });
-            const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${safe}.pdf`;
-            document.body.appendChild(a); a.click();
-            setTimeout(() => a.remove(), 2000);
-            setStatus(`🎉 ${safe}.pdf`);
-            state.isRunning = false; updateButtons();
-            return;
-        }
-
         if (html === null) {
             state.jsonEmptyStreak++;
             addLog(`⚠️ Глава ${n} пустая (${state.jsonEmptyStreak}/5)`);
@@ -1087,9 +934,11 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
 
         addLog(`🔍 Формат=${fmtName || '?'}, ZIP=${!!state.directLink}`);
 
-        // 🥇 ZIP через fetch(omit)
+        // ============================================
+        // 🥇 ПРИОРИТЕТ 1: ZIP (сохраняем как есть!)
+        // ============================================
         if (state.directLink && !isPdfPageByPage) {
-            addLog(`📦 ZIP → fetch(omit)`);
+            addLog(`📦 ZIP в приоритете`);
             const freshLink = await findZipLink();
             if (freshLink) state.directLink = freshLink;
             state.isRunning = true; updateButtons();
@@ -1098,54 +947,38 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
 
             if (blob) {
                 addLog(`✅ Blob: ${(blob.size/1024/1024).toFixed(1)} MB`);
-                if (isText) {
-                    try {
-                        const html = await convertFb2ZipToHtml(blob);
-                        const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
-                        const htmlBlob = new Blob([html], { type: 'text/html;charset=utf-8' });
-                        const a = document.createElement('a');
-                        a.href = URL.createObjectURL(htmlBlob);
-                        a.download = `${safe}.html`;
-                        document.body.appendChild(a); a.click();
-                        setTimeout(() => a.remove(), 2000);
-                        const sizeMb = (htmlBlob.size/1024/1024).toFixed(2);
-                        setStatus(`🎉 ${safe}.html (${sizeMb} MB)`);
-                        zipInfo.style.display = 'block';
-                        zipInfo.textContent = `✅ ${safe}.html (${sizeMb} MB)`;
-                        zipInfo.style.color = '#1a5a9a';
-                        state.isRunning = false; updateButtons();
-                        return;
-                    } catch(e) {
-                        addLog(`⚠️ Конвертация: ${e.message}`, true);
-                    }
-                } else {
-                    const m = state.directLink.match(/fname=([^&]+)/);
-                    const fn = m ? decodeURIComponent(m[1]) : `${state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100)}.zip`;
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = fn;
-                    document.body.appendChild(a); a.click();
-                    setTimeout(() => a.remove(), 2000);
-                    setStatus(`🎉 ${fn}`);
-                    zipInfo.style.display = 'block';
-                    zipInfo.textContent = `✅ ${fn} (${(blob.size/1024/1024).toFixed(1)} MB)`;
-                    zipInfo.style.color = '#1a5a9a';
-                    state.isRunning = false; updateButtons();
-                    return;
-                }
+                const m = state.directLink.match(/fname=([^&]+)/);
+                const fn = m ? decodeURIComponent(m[1]) : `${state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100)}.zip`;
+
+                // 🆕 Просто сохраняем ZIP — БЕЗ распаковки!
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = fn;
+                document.body.appendChild(a); a.click();
+                setTimeout(() => a.remove(), 2000);
+
+                setStatus(`🎉 ${fn}`);
+                zipInfo.style.display = 'block';
+                zipInfo.textContent = `✅ ${fn} (${(blob.size/1024/1024).toFixed(1)} MB)`;
+                zipInfo.style.color = '#1a5a9a';
+                addLog(`✅ ${fn}`);
+                state.isRunning = false; updateButtons();
+                return;
             }
-            addLog(`⚠️ ZIP недоступен → главы/PDF`);
+            addLog(`⚠️ ZIP недоступен → PDF/JSON`);
             state.isRunning = false; updateButtons();
         }
 
-        // 🥈 000.js (PDF или JSON)
+        // ============================================
+        // 🥈 ПРИОРИТЕТ 2: 000.js (PDF или JSON)
+        // ============================================
         addLog(`🔍 Проверка 000.js...`);
         setStatus('🔍 Проверка 000.js...');
         const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
         const detected = await detectContentType(chUrl);
         console.log('🔍 detected:', detected.type, detected.status || '');
 
-        // PDF
+        // 2a. PDF
         if (detected.type === 'pdf') {
             addLog(`📕 PDF-книга → качаем`);
             state.isRunning = true; updateButtons();
@@ -1172,7 +1005,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
             }
         }
 
-        // JSON главы
+        // 2b. JSON главы
         if (detected.type === 'json' || detected.type === 'json-obj') {
             addLog(`📖 JSON главы → HTML`);
             state.mode = 'json';
@@ -1192,7 +1025,9 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
             return;
         }
 
-        // 🥉 PDF постраничка
+        // ============================================
+        // 🥉 ПРИОРИТЕТ 3: PDF постраничка
+        // ============================================
         if (isPdfPageByPage) {
             addLog(`📕 PDF постраничка (${state.pageFormats.length} стр.)`);
             let totalPages = state.totalPages;
@@ -1261,7 +1096,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     });
 
     window.downloaderUI = {
-        version: 'v40.4',
+        version: 'v40.5',
         start: startSmart,
         pause: pauseDownload,
         stop: stopDownload,
@@ -1276,8 +1111,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         parseLitFile: parseLitFile,
         litJsonToHtml: litJsonToHtml,
         fetchJsonChapter: fetchJsonChapter,
-        buildBookHtml: buildBookHtml,
-        convertFb2ZipToHtml: convertFb2ZipToHtml
+        buildBookHtml: buildBookHtml
     };
 
     async function init() {
@@ -1338,7 +1172,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
                 addLog(`✅ ZIP найден`);
                 setStatus(`📦 Готов — жми "▶ Старт"`);
             } else {
-                addLog('ℹ️ ZIP нет → главы/PDF');
+                addLog('ℹ️ ZIP нет → PDF/JSON');
                 setStatus(`📖 Готов — жми "▶ Старт"`);
             }
             updateFormatDisplay();
@@ -1346,7 +1180,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
 
         updateButtons();
         if (GITHUB_CONFIG.token) { addLog('🔑 GitHub токен есть'); checkForSavedProgress(); }
-        console.log(`✅ v40.4 загружен!`);
+        console.log(`✅ v40.5 загружен!`);
     }
 
     let currentArtId = artId;
