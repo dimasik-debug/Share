@@ -1,20 +1,24 @@
 /**
- * Suno Downloader v11.2 — LIVE Progress + Detailed Network Diag
- * ✅ Мгновенный апдейт UI (первый чанк сразу + каждые 40ms)
- * ✅ Все фазы видны: License → Connect → Headers → Download → Decrypt → Save
- * ✅ MB / MB/s / chunk-rate / ETA / стall-детектор везде
- * ✅ Live прогресс в заголовке и в логе (каждые 10%)
+ * Suno Downloader v11.4 — IndexedDB + Suffix Number + Live Progress
+ * ✅ IndexedDB база скачанных треков (по clip.id)
+ * ✅ При запуске — статус "уже скачано" в списке (зелёная подсветка)
+ * ✅ Фильтр "только новые" / "перекачать"
+ * ✅ Префикс номера [01] в КОНЦЕ имени файла
+ * ✅ Живой прогресс + net-diag + stall-abort
  * ✅ Все треки через пагинацию (next_cursor + has_more)
- * ✅ Детект preview / locked
- * ✅ Префикс номера [01] в имени
  */
-(function sunoDownloaderV112() {
-    const VERSION = '11.2';
+(function sunoDownloaderV114() {
+    const VERSION = '11.4';
     const MAX_ATTEMPTS = 3;
     const STALL_THRESHOLD_MS = 5000;
-    const HEARTBEAT_MS = 1000;      // heartbeat раз в 1с (было 2с)
-    const UI_THROTTLE_MS = 40;      // апдейт UI 25 раз/сек (было 200ms)
-    const LOG_PCT_STEP = 10;        // лог каждые 10% (было 25%)
+    const HEARTBEAT_MS = 1000;
+    const UI_THROTTLE_MS = 40;
+    const LOG_PCT_STEP = 10;
+    const FIRST_CHUNK_TIMEOUT = 30000;
+    const GLOBAL_STALL_TIMEOUT = 60000;
+    const DB_NAME = 'sunodl_db';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'downloaded';
 
     console.log(`%c🎵 Suno Downloader v${VERSION}`, 'color:#a994ff;font-size:16px;font-weight:bold;');
 
@@ -32,7 +36,7 @@
         accent:'color:#a994ff;font-weight:bold;', ok:'color:#4ade80;',
         err:'color:#f87171;', warn:'color:#fbbf24;', dim:'color:#8a9aaa;',
         ts:'color:#6a7a8a;font-style:italic;', net:'color:#7c5cff;', step:'color:#a994ff;font-weight:500;',
-        stall:'color:#ff8c42;font-weight:bold;', hb:'color:#5a6a7a;'
+        stall:'color:#ff8c42;font-weight:bold;', hb:'color:#5a6a7a;', db:'color:#38bdf8;'
     };
 
     // ===== Мягкие звуки =====
@@ -92,13 +96,96 @@
 
     const state = {
         jwt:null, isBatch:false, batchCancel:false,
-        batchTotal:0, batchDone:0, batchErrors:0,
+        batchTotal:0, batchDone:0, batchErrors:0, batchSkipped:0,
         allClips:[], selected:new Set(),
+        downloadedIds:new Set(),
+        downloadedMeta:new Map(),
         phase:'idle',
         batchBytesTotal:0,
         batchBytesDone:0,
-        batchStartTime:0
+        batchStartTime:0,
+        filterOnlyNew:false
     };
+
+    // ===== INDEXEDDB =====
+    let db = null;
+
+    async function dbInit() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onerror = () => reject(req.error);
+            req.onsuccess = () => { db = req.result; resolve(db); };
+            req.onupgradeneeded = (e) => {
+                const d = e.target.result;
+                if (!d.objectStoreNames.contains(STORE_NAME)) {
+                    const store = d.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                    store.createIndex('title', 'title', { unique: false });
+                    store.createIndex('downloadedAt', 'downloadedAt', { unique: false });
+                }
+            };
+        });
+    }
+
+    async function dbGetAll() {
+        if (!db) await dbInit();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function dbAdd(record) {
+        if (!db) await dbInit();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.put(record);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function dbClear() {
+        if (!db) await dbInit();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.clear();
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function dbRemove(id) {
+        if (!db) await dbInit();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.delete(id);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function dbLoadDownloaded() {
+        try {
+            const all = await dbGetAll();
+            state.downloadedIds.clear();
+            state.downloadedMeta.clear();
+            for (const rec of all) {
+                state.downloadedIds.add(rec.id);
+                state.downloadedMeta.set(rec.id, rec);
+            }
+            log(`📚 IndexedDB: ${all.length} скачанных треков`, '#38bdf8', CS.db);
+            return all;
+        } catch(e) {
+            logWarn(`IndexedDB недоступен: ${e.message}`);
+            return [];
+        }
+    }
 
     // ===== DEVICE ID + BROWSER TOKEN =====
     const DEVICE_ID = (() => {
@@ -128,7 +215,7 @@
         return u;
     }
 
-    // ===== УТИЛИТЫ ФОРМАТИРОВАНИЯ =====
+    // ===== УТИЛИТЫ =====
     function fmtBytes(b) {
         if (b < 1024) return b + ' B';
         if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
@@ -144,6 +231,13 @@
         if (sec < 60) return sec.toFixed(0) + 's';
         const m = Math.floor(sec/60), s = Math.round(sec%60);
         return m + 'm ' + s + 's';
+    }
+    function fmtAgo(tsMs) {
+        const sec = (Date.now() - tsMs) / 1000;
+        if (sec < 60) return 'только что';
+        if (sec < 3600) return Math.floor(sec/60) + ' мин назад';
+        if (sec < 86400) return Math.floor(sec/3600) + ' ч назад';
+        return Math.floor(sec/86400) + ' дн назад';
     }
 
     // ===== JWT =====
@@ -201,6 +295,7 @@
             .sunodl-btn-danger{background:rgba(248,113,113,0.15);color:#f87171;border:1px solid rgba(248,113,113,0.2);}
             .sunodl-btn-ghost{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.08);}
             .sunodl-btn-ghost:hover{background:rgba(255,255,255,0.1);color:#fff;}
+            .sunodl-btn-ghost.active{background:rgba(169,148,255,0.15);color:#a994ff;border-color:rgba(169,148,255,0.3);}
             .sunodl-icon-btn{width:32px;height:32px;padding:0;border-radius:10px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);border:none;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;font-size:14px;}
             .sunodl-icon-btn:hover{background:rgba(255,255,255,0.1);color:#fff;}
             #sunodl-log::-webkit-scrollbar{width:6px;}
@@ -218,23 +313,33 @@
             .sunodl-track-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;border:1px solid transparent;}
             .sunodl-track-row:hover{background:rgba(255,255,255,0.04);}
             .sunodl-track-row.selected{background:rgba(169,148,255,0.08);border-color:rgba(169,148,255,0.2);}
-            .sunodl-track-row.bad{opacity:0.5;}
+            .sunodl-track-row.bad{opacity:0.4;}
+            .sunodl-track-row.downloaded{background:rgba(74,222,128,0.06);border-color:rgba(74,222,128,0.15);}
+            .sunodl-track-row.downloaded:hover{background:rgba(74,222,128,0.1);}
+            .sunodl-track-row.downloaded.selected{background:rgba(169,148,255,0.12);border-color:rgba(169,148,255,0.35);}
             .sunodl-checkbox{width:16px;height:16px;border-radius:4px;border:1.5px solid rgba(255,255,255,0.25);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:all 0.15s;background:transparent;}
             .sunodl-checkbox.checked{background:linear-gradient(135deg,#a994ff,#7c5cff);border-color:transparent;}
+            .sunodl-checkbox.downloaded-checked{background:linear-gradient(135deg,#4ade80,#22c55e);border-color:transparent;}
             .sunodl-track-idx{font-size:10px;color:rgba(255,255,255,0.3);font-family:'SF Mono',monospace;width:24px;flex-shrink:0;}
             .sunodl-track-title{font-size:12px;color:rgba(255,255,255,0.85);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-            .sunodl-track-badge{font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(74,222,128,0.15);color:#4ade80;flex-shrink:0;font-family:'SF Mono',monospace;}
+            .sunodl-track-row.downloaded .sunodl-track-title{color:rgba(74,222,128,0.9);}
+            .sunodl-track-meta{font-size:9px;color:rgba(255,255,255,0.35);font-family:'SF Mono',monospace;flex-shrink:0;margin-right:4px;}
+            .sunodl-track-badge{font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(74,222,128,0.15);color:#4ade80;flex-shrink:0;font-family:'SF Mono',monospace;min-width:56px;text-align:center;}
             .sunodl-track-badge.bad{background:rgba(248,113,113,0.15);color:#f87171;}
             .sunodl-track-badge.warn{background:rgba(251,191,36,0.15);color:#fbbf24;}
+            .sunodl-track-badge.downloaded{background:rgba(74,222,128,0.25);color:#4ade80;}
+            .sunodl-track-badge.new{background:rgba(169,148,255,0.2);color:#a994ff;}
             .sunodl-stat-line{font-family:'SF Mono',Consolas,monospace;font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.1px;}
+            .sunodl-db-summary{display:flex;gap:12px;align-items:center;font-size:11px;font-family:'SF Mono',monospace;padding:8px 10px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.15);border-radius:8px;margin-bottom:10px;}
+            .sunodl-db-summary .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
         </style>
 
-        <div id="sunodl" style="position:fixed;bottom:16px;right:16px;z-index:99999;background:${SUNO.bgPrimary};color:${SUNO.textPrimary};font-family:${SUNO.font};width:600px;max-width:calc(100vw - 32px);border-radius:20px;border:1px solid ${SUNO.border};box-shadow:0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.02) inset;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 32px);">
+        <div id="sunodl" style="position:fixed;bottom:16px;right:16px;z-index:99999;background:${SUNO.bgPrimary};color:${SUNO.textPrimary};font-family:${SUNO.font};width:620px;max-width:calc(100vw - 32px);border-radius:20px;border:1px solid ${SUNO.border};box-shadow:0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.02) inset;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 32px);">
             <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid ${SUNO.border};flex-shrink:0;">
                 <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,${SUNO.accent},#7c5cff);display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 16px rgba(124,92,255,0.3);">🎵</div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:500;font-size:15px;letter-spacing:-0.2px;">Suno Downloader</div>
-                    <div style="font-size:11px;color:${SUNO.textTertiary};letter-spacing:0.3px;margin-top:1px;">v${VERSION} · live · net-diag · select UI</div>
+                    <div style="font-size:11px;color:${SUNO.textTertiary};letter-spacing:0.3px;margin-top:1px;">v${VERSION} · IndexedDB · live · net-diag</div>
                 </div>
                 <button id="sunodl-sound" class="sunodl-icon-btn" title="Звук">🔊</button>
                 <button id="sunodl-clear" class="sunodl-icon-btn" title="Очистить лог">🗑</button>
@@ -248,21 +353,30 @@
 
             <!-- СПИСОК ТРЕКОВ -->
             <div id="sunodl-list-panel" style="display:none;padding:14px 18px;border-bottom:1px solid ${SUNO.border};flex-shrink:0;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div id="sunodl-db-summary" class="sunodl-db-summary" style="display:none;">
+                    <div class="dot" style="background:#38bdf8;"></div>
+                    <div style="flex:1;">
+                        <span style="color:#38bdf8;font-weight:500;">IndexedDB</span> · <span id="sunodl-db-count">0</span> скачано
+                    </div>
+                    <button id="sunodl-db-clear" class="sunodl-btn sunodl-btn-ghost" style="padding:4px 10px;font-size:10px;" title="Очистить базу скачанных">🗑 база</button>
+                </div>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
                     <div style="font-size:12px;color:${SUNO.textSecondary};letter-spacing:0.2px;">ВЫБЕРИ ТРЕКИ</div>
-                    <div style="display:flex;gap:6px;">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <button id="sunodl-filter-new" class="sunodl-btn sunodl-btn-ghost" style="padding:5px 10px;font-size:11px;" title="Скрыть уже скачанные">Только новые</button>
                         <button id="sunodl-sel-all" class="sunodl-btn sunodl-btn-ghost" style="padding:5px 10px;font-size:11px;">Все</button>
                         <button id="sunodl-sel-none" class="sunodl-btn sunodl-btn-ghost" style="padding:5px 10px;font-size:11px;">Ничего</button>
                     </div>
                 </div>
-                <div id="sunodl-list" style="max-height:260px;overflow-y:auto;background:${SUNO.bgSecondary};border-radius:10px;padding:6px;border:1px solid ${SUNO.border};"></div>
+                <div id="sunodl-list" style="max-height:300px;overflow-y:auto;background:${SUNO.bgSecondary};border-radius:10px;padding:6px;border:1px solid ${SUNO.border};"></div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
                     <div id="sunodl-list-info" style="font-size:11px;color:${SUNO.textTertiary};">—</div>
                     <button id="sunodl-start-batch" class="sunodl-btn sunodl-btn-accent" style="padding:9px 18px;">▶ Старт</button>
                 </div>
             </div>
 
-            <!-- ОБЩИЙ ПРОГРЕСС БАТЧА -->
+            <!-- ОБЩИЙ ПРОГРЕСС -->
             <div id="sunodl-batch" style="display:none;padding:14px 18px;border-bottom:1px solid ${SUNO.border};flex-shrink:0;">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
                     <div style="font-size:12px;color:${SUNO.textSecondary};letter-spacing:0.2px;">ОБЩИЙ ПРОГРЕСС</div>
@@ -276,6 +390,7 @@
                 </div>
                 <div style="display:flex;justify-content:space-between;font-size:10px;color:${SUNO.textTertiary};font-family:'SF Mono',monospace;margin-bottom:4px;">
                     <span id="sunodl-batch-ok">✓ 0 OK</span>
+                    <span id="sunodl-batch-skip">⏭ 0 skip</span>
                     <span id="sunodl-batch-bytes">📦 0 MB</span>
                     <span id="sunodl-batch-err">✕ 0 errors</span>
                 </div>
@@ -328,6 +443,7 @@
     const listPanel = $('sunodl-list-panel');
     const listEl = $('sunodl-list');
     const listInfo = $('sunodl-list-info');
+    const dbSummary = $('sunodl-db-summary');
 
     setInterval(()=>{ timerEl.textContent = ts(); }, 100);
     setInterval(()=>{
@@ -349,6 +465,7 @@
     const logNet = t => log('🌐 '+t, '#8a7cff', CS.net);
     const logStall = t => log('🐌 '+t, '#ff8c42', CS.stall);
     const logHb = t => log('· '+t, '#5a6a7a', CS.hb);
+    const logDb = t => log('💾 '+t, '#38bdf8', CS.db);
 
     function setStatus(text, kind='idle') {
         statusText.textContent = text;
@@ -359,15 +476,15 @@
 
     function updateBatchProgress() {
         batchEl.style.display = 'block';
-        const { batchDone, batchTotal, batchErrors, batchBytesDone, batchStartTime } = state;
+        const { batchDone, batchTotal, batchErrors, batchSkipped, batchBytesDone, batchStartTime } = state;
         $('sunodl-batch-done').textContent = batchDone;
         $('sunodl-batch-total').textContent = batchTotal;
         $('sunodl-batch-bar').style.width = batchTotal > 0 ? `${Math.round(batchDone/batchTotal*100)}%` : '0%';
         $('sunodl-batch-ok').textContent = `✓ ${batchDone} OK`;
+        $('sunodl-batch-skip').textContent = `⏭ ${batchSkipped} skip`;
         $('sunodl-batch-err').textContent = `✕ ${batchErrors} errors`;
         $('sunodl-batch-bytes').textContent = `📦 ${fmtBytes(batchBytesDone)}`;
 
-        // ETA + avg speed
         const elapsed = (performance.now() - batchStartTime) / 1000;
         const avgSpeed = elapsed > 0 ? (batchBytesDone/1048576/elapsed) : 0;
         const remaining = batchTotal - batchDone;
@@ -397,30 +514,49 @@
     // ===== СПИСОК =====
     function renderList(clips) {
         listEl.innerHTML = '';
-        clips.forEach((c, i) => {
+
+        // фильтр "только новые"
+        const visible = clips.map((c, i) => ({c, i})).filter(({c}) => {
+            if (!state.filterOnlyNew) return true;
+            return !state.downloadedIds.has(c.id);
+        });
+
+        visible.forEach(({c, i}) => {
             const isFull = c?.media_urls?.[0]?.url?.includes('cloudfront');
             const isPreview = c.type === 'preview' || !!c.preview_seconds;
-            const isLocked = c.is_download_unlocked === false;
+            const isDownloaded = state.downloadedIds.has(c.id);
             const canDownload = isFull && !isPreview;
 
             const row = document.createElement('div');
-            row.className = 'sunodl-track-row' + (canDownload ? '' : ' bad');
+            row.className = 'sunodl-track-row' + (!canDownload ? ' bad' : '') + (isDownloaded ? ' downloaded' : '');
             row.dataset.idx = i;
 
             const checked = state.selected.has(i);
             if (checked) row.classList.add('selected');
 
+            // бейдж
             let badgeText = 'FULL', badgeClass = '';
             if (isPreview) { badgeText = 'PREVIEW'; badgeClass = 'bad'; }
             else if (!isFull) { badgeText = 'PART'; badgeClass = 'bad'; }
-            else if (isLocked) { badgeText = 'LOCKED'; badgeClass = 'warn'; }
+            else if (isDownloaded) { badgeText = '✓ ЕСТЬ'; badgeClass = 'downloaded'; }
+            else { badgeText = 'NEW'; badgeClass = 'new'; }
 
-            const sizeInfo = c.metadata?.duration ? ` · ${Math.round(c.metadata.duration)}s` : '';
+            // мета скачанного
+            let metaHtml = '';
+            if (isDownloaded) {
+                const rec = state.downloadedMeta.get(c.id);
+                if (rec) {
+                    const sizeStr = rec.size ? fmtBytes(rec.size) : '';
+                    const agoStr = rec.downloadedAt ? fmtAgo(rec.downloadedAt) : '';
+                    metaHtml = `<div class="sunodl-track-meta">${sizeStr}${sizeStr&&agoStr?' · ':''}${agoStr}</div>`;
+                }
+            }
 
             row.innerHTML = `
-                <div class="sunodl-checkbox ${checked?'checked':''}">${checked?'✓':''}</div>
+                <div class="sunodl-checkbox ${checked?(isDownloaded?'downloaded-checked':'checked'):''}">${checked?'✓':''}</div>
                 <div class="sunodl-track-idx">${String(i+1).padStart(2,'0')}</div>
                 <div class="sunodl-track-title" title="${(c.title||'—').replace(/"/g,'&quot;')}">${c.title||'—'}${isPreview?' · 60s':''}</div>
+                ${metaHtml}
                 <div class="sunodl-track-badge ${badgeClass}">${badgeText}</div>
             `;
 
@@ -435,21 +571,33 @@
                 row.classList.toggle('selected');
                 const cb = row.querySelector('.sunodl-checkbox');
                 cb.classList.toggle('checked');
+                cb.classList.toggle('downloaded-checked');
                 cb.textContent = state.selected.has(i) ? '✓' : '';
                 updateListInfo();
             };
             listEl.appendChild(row);
         });
+
+        if (visible.length === 0 && state.filterOnlyNew) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:20px;text-align:center;font-size:12px;color:rgba(255,255,255,0.4);';
+            empty.textContent = '🎉 Все треки уже скачаны! Выключи "Только новые" чтобы перекачать.';
+            listEl.appendChild(empty);
+        }
+
         updateListInfo();
     }
 
     function updateListInfo() {
-        const full = state.allClips.filter(c => {
+        const { allClips, downloadedIds } = state;
+        const full = allClips.filter(c => {
             const isFull = c?.media_urls?.[0]?.url?.includes('cloudfront');
             const isPreview = c.type === 'preview' || !!c.preview_seconds;
             return isFull && !isPreview;
         }).length;
-        listInfo.innerHTML = `Выбрано: <span style="color:${SUNO.accent};font-weight:bold;">${state.selected.size}</span> · Всего: ${state.allClips.length} · Скачиваемых: ${full}`;
+        const downloadedCount = allClips.filter(c => downloadedIds.has(c.id)).length;
+        const newCount = full - allClips.filter(c => downloadedIds.has(c.id) && c?.media_urls?.[0]?.url?.includes('cloudfront') && !(c.type==='preview'||c.preview_seconds)).length;
+        listInfo.innerHTML = `Выбрано: <span style="color:${SUNO.accent};font-weight:bold;">${state.selected.size}</span> · Всего: ${allClips.length} · Скачиваемых: ${full} · <span style="color:${SUNO.success};">✓ ${downloadedCount}</span> · <span style="color:${SUNO.accent};">🆕 ${newCount}</span>`;
         $('sunodl-start-batch').disabled = state.selected.size === 0;
     }
 
@@ -514,7 +662,7 @@
                 break;
             }
 
-            let added = 0, previewCount = 0, lockedCount = 0;
+            let added = 0, previewCount = 0, lockedCount = 0, alreadyHave = 0;
             for (const c of clips) {
                 if (seen.has(c.id)) continue;
                 seen.add(c.id);
@@ -522,19 +670,21 @@
                 added++;
                 if (c.type === 'preview' || c.preview_seconds) previewCount++;
                 if (c.is_download_unlocked === false) lockedCount++;
+                if (state.downloadedIds.has(c.id)) alreadyHave++;
             }
 
             const nextCursor = data.next_cursor || data.cursor || null;
             hasMore = data.has_more === true && !!nextCursor;
 
-            logOk(`page ${page}: +${added} · всего ${all.length} · has_more=${data.has_more} · next=${nextCursor?nextCursor.slice(0,8)+'…':'нет'}` +
+            logOk(`page ${page}: +${added} · всего ${all.length} · has_more=${data.has_more}` +
                   (previewCount ? ` · ⚠ ${previewCount} preview` : '') +
-                  (lockedCount ? ` · 🔒 ${lockedCount} locked` : ''));
+                  (lockedCount ? ` · 🔒 ${lockedCount} locked` : '') +
+                  (alreadyHave ? ` · ✓ ${alreadyHave} уже есть` : ''));
 
             if (onPage) onPage(page, all.length, hasMore);
 
             if (!hasMore) {
-                log(`  ⏹ конец (has_more=${data.has_more}, next_cursor=${nextCursor?'есть':'нет'})`, SUNO.textTertiary, CS.dim);
+                log(`  ⏹ конец (has_more=${data.has_more})`, SUNO.textTertiary, CS.dim);
                 break;
             }
             if (seen.has(nextCursor)) {
@@ -565,7 +715,7 @@
         return await r.json();
     }
 
-    // ===== РАСШИФРОВКА — живой прогресс =====
+    // ===== РАСШИФРОВКА =====
     async function decryptClip(clipId, cdnUrl, license, onProgress) {
         const jwt = await getJwt();
         const wk = b64(license.key), wiv = b64(license.iv);
@@ -581,17 +731,17 @@
         const ctr = await crypto.subtle.importKey('raw', ak, { name:'AES-CTR' }, false, ['decrypt']);
 
         logNet('CDN GET');
-        if (onProgress) onProgress(0, 0, 0, 0, 0, false, '🌐 Подключение к CDN...', 'ждём ответа');
+        if (onProgress) onProgress(0, 0, 0, 0, 0, false, '🌐 Подключение к CDN...', 'ждём ответа', '');
 
         const t1 = performance.now();
         const ctrl = new AbortController();
-        const hardTimeout = setTimeout(()=>ctrl.abort(), 600000);
+        const hardTimeout = setTimeout(()=>ctrl.abort(), 300000);
         let r;
         try {
             r = await fetch(cdnUrl, { signal: ctrl.signal });
         } catch(e) {
             clearTimeout(hardTimeout);
-            if (e.name === 'AbortError') throw new Error('⏱ CDN HARD TIMEOUT 600s');
+            if (e.name === 'AbortError') throw new Error('⏱ CDN HARD TIMEOUT 300s');
             throw new Error(`🌐 CDN fetch: ${e.message}`);
         }
         if (!r.ok) { clearTimeout(hardTimeout); throw new Error(`CDN HTTP ${r.status}`); }
@@ -602,7 +752,7 @@
 
         if (onProgress) onProgress(0, total, 0, 0, 0, false,
             `📦 Заголовки OK · ${fmtBytes(total)} · ждём данные...`,
-            'ожидание первого чанка');
+            'ожидание первого чанка', '');
 
         const reader = r.body.getReader();
         const chunks = [];
@@ -612,10 +762,16 @@
         let lastPct = 0;
         let stallWarned = false;
         let chunkCount = 0;
-        let speedSamples = [];      // скользящее среднее для стабильности
+        let speedSamples = [];
         const SAMPLE_WINDOW = 5;
 
-        // heartbeat — раз в 1с
+        const firstChunkTimeout = setTimeout(() => {
+            if (loaded === 0) {
+                logWarn(`⚠ Нет ни байта за ${FIRST_CHUNK_TIMEOUT/1000}s после headers — рвём, retry`);
+                ctrl.abort();
+            }
+        }, FIRST_CHUNK_TIMEOUT);
+
         const hb = setInterval(() => {
             const now = performance.now();
             const sinceChunk = now - lastChunkAt;
@@ -629,7 +785,12 @@
                 Sound.stall();
                 if (onProgress) onProgress(loaded, total, sp, pct, sinceChunk, true,
                     `🐌 STALL ${(sinceChunk/1000).toFixed(0)}s · ${fmtBytes(loaded)}/${fmtBytes(total)}`,
-                    'ждём сеть...');
+                    `нет данных ${(sinceChunk/1000).toFixed(1)}s`, '');
+
+                if (sinceChunk > GLOBAL_STALL_TIMEOUT && loaded > 0) {
+                    logWarn(`⚠ Глобальный stall ${(sinceChunk/1000).toFixed(0)}s — рвём, retry`);
+                    ctrl.abort();
+                }
             } else if (sinceChunk < 1500 && stallWarned) {
                 stallWarned = false;
                 logOk(`сеть ожила · +${fmtBytes(loaded)}`);
@@ -642,6 +803,12 @@
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
+
+                if (loaded === 0 && firstChunkTimeout) {
+                    clearTimeout(firstChunkTimeout);
+                    logOk(`первый чанк получен · ${fmtBytes(value.byteLength)}`);
+                }
+
                 chunks.push(value);
                 loaded += value.byteLength;
                 lastChunkAt = performance.now();
@@ -653,7 +820,6 @@
                     const sec = (now - t1) / 1000;
                     const instantSp = sec > 0 ? (loaded/1048576/sec) : 0;
 
-                    // скользящее среднее
                     speedSamples.push(instantSp);
                     if (speedSamples.length > SAMPLE_WINDOW) speedSamples.shift();
                     const sp = speedSamples.reduce((a,b)=>a+b,0) / speedSamples.length;
@@ -668,16 +834,22 @@
 
                     if (onProgress) onProgress(loaded, total, sp, pct, 0, false, stage, netInfo, etaInfo);
 
-                    // лог каждые LOG_PCT_STEP %
                     if (pct - lastPct >= LOG_PCT_STEP) {
                         lastPct = Math.floor(pct/LOG_PCT_STEP)*LOG_PCT_STEP;
                         log(`  ⬇ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(sp)} · ETA ${fmtEta(etaSec)}`, SUNO.textTertiary, CS.dim);
                     }
                 }
             }
+        } catch(e) {
+            if (e.name === 'AbortError') {
+                if (loaded === 0) throw new Error(`⏱ Нет данных за ${FIRST_CHUNK_TIMEOUT/1000}s после headers`);
+                throw new Error(`⏱ Глобальный stall > ${GLOBAL_STALL_TIMEOUT/1000}s · скачано ${fmtBytes(loaded)}/${fmtBytes(total)}`);
+            }
+            throw e;
         } finally {
             clearInterval(hb);
             clearTimeout(hardTimeout);
+            if (firstChunkTimeout) clearTimeout(firstChunkTimeout);
         }
 
         const enc = new Uint8Array(loaded);
@@ -706,8 +878,6 @@
         const isFtyp = boxType === 'ftyp';
         const isWebm = head[0]===0x1a && head[1]===0x45;
 
-        console.log(`%c  🔍 Header: boxType="${boxType}" · ${isFtyp||isWebm?'✅':'❌'}`, isFtyp||isWebm?'color:#4ade80;':'color:#f87171;font-weight:bold;');
-
         if (!isFtyp && !isWebm) {
             const hex = Array.from(head).map(b=>b.toString(16).padStart(2,'0')).join(' ');
             throw new Error(`Битый файл: "${boxType}" · HEX: ${hex}`);
@@ -717,11 +887,12 @@
         return { blob: new Blob([dec], { type: mime }), isFtyp, size: dec.byteLength };
     }
 
+    // ===== СОХРАНЕНИЕ: [01] В КОНЦЕ ИМЕНИ =====
     function saveToDownloads(blob, title, numPrefix) {
         const safe = sanitizeName(title);
         const ext = blob.type.includes('webm') ? 'webm' : 'm4a';
-        const prefix = numPrefix ? `[${String(numPrefix).padStart(2,'0')}] ` : '';
-        const fn = `${prefix}${safe}.${ext}`;
+        const suffix = numPrefix ? ` [${String(numPrefix).padStart(2,'0')}]` : '';
+        const fn = `${safe}${suffix}.${ext}`;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = fn; a.style.display = 'none';
@@ -737,9 +908,6 @@
         const cdnUrl = clip.media_urls[0].url;
         const tT0 = performance.now();
 
-        console.log(`\n%c═══════════════════════════════════════`, 'color:#a994ff;');
-        console.log(`%c▶ [${idxInBatch+1}/${totalInBatch}] [${String(seqNum).padStart(2,'0')}] "${title}"`, 'color:#a994ff;font-weight:bold;');
-
         logStep(`[${idxInBatch+1}/${totalInBatch}] [${String(seqNum).padStart(2,'0')}] "${title.slice(0,40)}"`);
         setCurrent(title, idxInBatch, totalInBatch, 'Начинаем...', 0, 'idle', 'init', '');
 
@@ -752,19 +920,16 @@
             }
 
             try {
-                // 1) License — 2-10%
                 setCurrent(title, idxInBatch, totalInBatch, '🔑 License...', 2, 'license', 'ожидание /api/mango/rights', '');
                 const lic = await fetchLicense(clip.id);
                 setCurrent(title, idxInBatch, totalInBatch, '🔑 License OK', 10, 'license', 'license получен', '');
 
-                // 2) Download + Decrypt — 10-95%
                 const { blob, size } = await decryptClip(clip.id, cdnUrl, lic, (loaded, totalBytes, speed, pct, sinceChunk, isStall, customStage, netInfo, etaInfo) => {
-                    // прогресс: 10% license → 10-90% download → 90-95% decrypt → 95-100% save
                     let dispPct;
                     if (customStage && customStage.includes('Расшифровка')) dispPct = 92;
-                    else if (loaded === 0 && totalBytes === 0) dispPct = 12;       // подключение
-                    else if (loaded === 0 && totalBytes > 0) dispPct = 15;         // заголовки
-                    else dispPct = 15 + pct * 0.75;                                 // 15-90%
+                    else if (loaded === 0 && totalBytes === 0) dispPct = 12;
+                    else if (loaded === 0 && totalBytes > 0) dispPct = 15;
+                    else dispPct = 15 + pct * 0.75;
 
                     let st = 'idle';
                     if (isStall) st = 'stall';
@@ -774,24 +939,36 @@
                     const eta = etaInfo || '';
 
                     setCurrent(title, idxInBatch, totalInBatch, stage, dispPct, st, net, eta);
-
-                    // обновляем батч-прогресс по байтам
-                    if (loaded > 0) {
-                        state.batchBytesDone += 0; // не суммируем повторно
-                    }
                 });
 
-                // обновляем общий счётчик байт (только после успеха)
                 state.batchBytesDone += size;
 
-                // 3) Save — 95-100%
                 setCurrent(title, idxInBatch, totalInBatch, '💾 Сохранение в Загрузки...', 96, 'idle', `${fmtBytes(size)} записывается`, '');
                 Sound.save();
                 saveToDownloads(blob, title, seqNum);
                 setCurrent(title, idxInBatch, totalInBatch, '✅ Готово', 100, 'done', `${fmtBytes(size)} сохранено`, '');
 
+                // ⚡ запись в IndexedDB
+                try {
+                    await dbAdd({
+                        id: clip.id,
+                        title: clip.title || '',
+                        size: size,
+                        downloadedAt: Date.now(),
+                        filename: sanitizeName(title) + ` [${String(seqNum).padStart(2,'0')}].` + (blob.type.includes('webm') ? 'webm' : 'm4a'),
+                        model: clip.major_model_version || '',
+                        duration: clip.metadata?.duration || 0
+                    });
+                    state.downloadedIds.add(clip.id);
+                    state.downloadedMeta.set(clip.id, {
+                        id: clip.id, title: clip.title, size, downloadedAt: Date.now()
+                    });
+                    logDb(`записан в базу: ${clip.id.slice(0,8)}…`);
+                } catch(e) {
+                    logWarn(`IndexedDB write fail: ${e.message}`);
+                }
+
                 const tMs = (performance.now()-tT0).toFixed(0);
-                console.log(`%c▶ [DONE] [${String(seqNum).padStart(2,'0')}] "${title}" · ${fmtBytes(size)} · ${(tMs/1000).toFixed(1)}s`, 'color:#4ade80;font-weight:bold;');
                 logOk(`ГОТОВО · ${(tMs/1000).toFixed(1)}s · ${fmtBytes(size)}`);
 
                 state.batchDone++;
@@ -844,14 +1021,27 @@
             });
             logOk(`Скачиваемых (полные + не-preview): ${full.length}`);
 
+            const alreadyDownloaded = clips.filter(c => state.downloadedIds.has(c.id)).length;
+            const newTracks = full.length - clips.filter(c => state.downloadedIds.has(c.id) && c?.media_urls?.[0]?.url?.includes('cloudfront') && !(c.type==='preview'||c.preview_seconds)).length;
+            logOk(`✓ уже скачано: ${alreadyDownloaded} · 🆕 новых: ${newTracks}`, '#38bdf8', CS.db);
+
+            // показываем DB summary
+            if (state.downloadedIds.size > 0) {
+                dbSummary.style.display = 'flex';
+                $('sunodl-db-count').textContent = state.downloadedIds.size;
+            }
+
+            // авто-выбор только новых (не скачанных)
             clips.forEach((c, i) => {
                 const isFull = c?.media_urls?.[0]?.url?.includes('cloudfront');
                 const isPreview = c.type === 'preview' || !!c.preview_seconds;
-                if (isFull && !isPreview) state.selected.add(i);
+                if (isFull && !isPreview && !state.downloadedIds.has(c.id)) {
+                    state.selected.add(i);
+                }
             });
 
             renderList(clips);
-            setStatus(`Выбрано ${state.selected.size} из ${clips.length}`, 'ok');
+            setStatus(`Выбрано ${state.selected.size} новых из ${clips.length}`, 'ok');
             Sound.chord([523,659],0.4,0.08);
         } catch(e) {
             logErr(`Ошибка: ${e.message}`);
@@ -881,6 +1071,7 @@
         state.batchCancel = false;
         state.batchErrors = 0;
         state.batchDone = 0;
+        state.batchSkipped = 0;
         state.batchTotal = clipsToDownload.length;
         state.batchBytesDone = 0;
         state.batchStartTime = performance.now();
@@ -954,6 +1145,7 @@
         }
     };
     $('sunodl-stop').onclick = () => { Sound.error(); state.batchCancel=true; logWarn('⏹ Стоп...'); };
+
     $('sunodl-sel-all').onclick = () => {
         state.allClips.forEach((c, i) => {
             const isFull = c?.media_urls?.[0]?.url?.includes('cloudfront');
@@ -970,12 +1162,44 @@
     };
     $('sunodl-start-batch').onclick = () => { Sound.click(); startBatch(); };
 
+    // ⚡ фильтр "только новые"
+    $('sunodl-filter-new').onclick = () => {
+        state.filterOnlyNew = !state.filterOnlyNew;
+        $('sunodl-filter-new').classList.toggle('active', state.filterOnlyNew);
+        renderList(state.allClips);
+        Sound.click();
+    };
+
+    // ⚡ очистка IndexedDB
+    $('sunodl-db-clear').onclick = async () => {
+        if (!confirm('Очистить базу скачанных треков? Файлы в Загрузках останутся, но скрипт перестанет их "узнавать".')) return;
+        try {
+            await dbClear();
+            state.downloadedIds.clear();
+            state.downloadedMeta.clear();
+            logDb('база очищена');
+            dbSummary.style.display = 'none';
+            renderList(state.allClips);
+            Sound.click();
+        } catch(e) {
+            logErr(`db clear: ${e.message}`);
+        }
+    };
+
     // ===== INIT =====
     log(`Suno Downloader v${VERSION}`, SUNO.accent, CS.accent);
-    log(`Live progress · net-diag · select UI · numbered saves`, SUNO.textTertiary, CS.dim);
+    log(`IndexedDB · live · net-diag · suffix number`, SUNO.textTertiary, CS.dim);
     log(`device-id: ${DEVICE_ID.slice(0,8)}…`, SUNO.textTertiary, CS.dim);
 
     (async () => {
+        // ⚡ грузим IndexedDB сразу при старте
+        try {
+            await dbInit();
+            await dbLoadDownloaded();
+        } catch(e) {
+            logWarn(`IndexedDB init fail: ${e.message}`);
+        }
+
         const j = await getJwt();
         if (j) { logOk('JWT готов'); setStatus('Нажми "Загрузить список"', 'ok'); }
         else { logWarn('Ждём JWT...'); setStatus('Открой любой трек', 'warn'); }
