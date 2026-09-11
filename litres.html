@@ -103,7 +103,6 @@ ol li, ul li { margin-bottom: 6px; }
     flex-wrap: wrap;
 }
 
-/* 🎯 Кнопка-букмарклет (перетащи на панель закладок) */
 .bookmarklet {
     display: inline-flex;
     align-items: center;
@@ -139,7 +138,6 @@ ol li, ul li { margin-bottom: 6px; }
     50% { box-shadow: 0 4px 24px rgba(102,126,234,0.7); }
 }
 
-/* 📋 Кнопка копирования */
 .copy-btn {
     padding: 12px 18px;
     background: #f0f4fa;
@@ -160,24 +158,6 @@ ol li, ul li { margin-bottom: 6px; }
     background: #27ae60;
     color: #fff;
     border-color: #27ae60;
-}
-
-/* 🚀 Кнопка "Открыть в новой вкладке" */
-.open-btn {
-    padding: 12px 18px;
-    background: #fff8e8;
-    color: #6a5a2a;
-    border: 2px solid #f0e0b8;
-    border-radius: 10px;
-    font-weight: 700;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-family: inherit;
-}
-.open-btn:hover {
-    background: #f0e0b8;
-    border-color: #d0b878;
 }
 
 details {
@@ -232,17 +212,6 @@ details pre {
 }
 .hint-green strong { color: #1a2a4a; }
 
-.hint-purple {
-    background: #f4e8ff;
-    border-left: 4px solid #8e44ad;
-    padding: 12px 16px;
-    border-radius: 8px;
-    margin: 16px 0;
-    font-size: 13px;
-    color: #4a1a6a;
-}
-.hint-purple strong { color: #1a2a4a; }
-
 .browser-tabs {
     display: flex;
     gap: 8px;
@@ -280,6 +249,14 @@ kbd {
     font-weight: 600;
 }
 
+code {
+    background: #f0f4fa;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #1a5a9a;
+}
+
 footer {
     margin-top: 40px;
     padding-top: 20px;
@@ -307,28 +284,13 @@ footer a {
     background: #27ae60;
     color: #fff;
 }
-.badge-v31 {
+.badge-v40 {
     background: #8e44ad;
     color: #fff;
 }
 .badge-suno {
     background: #ff6b35;
     color: #fff;
-}
-
-.step-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: #fff;
-    border-radius: 50%;
-    font-weight: 800;
-    font-size: 13px;
-    margin-right: 8px;
-    flex-shrink: 0;
 }
 
 .drag-arrow {
@@ -358,9 +320,8 @@ footer a {
         <h2>🎯 Что это</h2>
         <p>Набор букмарклетов (закладок-скриптов) для скачивания контента:</p>
         <ul>
-            <li>📚 <strong>Книга v31</strong> — PDF, FB2, EPUB → ZIP (или HTML через JSON fallback)</li>
+            <li>📚 <strong>Книга v40</strong> — 🥇 ZIP → 🥈 PDF/JSON → 🥉 постраничка</li>
             <li>🎧 <strong>Аудио v1.1</strong> — MP3 по главам, готовый ZIP или M4B</li>
-            <li>📖 <strong>Reader JSON</strong> — если ZIP 404, качает главы и собирает HTML</li>
             <li>🎵 <strong>Suno</strong> — скачивание треков с suno.com</li>
             <li>🎛️ <strong>Выбор</strong> — сам определяет что на странице (книга или аудио)</li>
         </ul>
@@ -428,17 +389,17 @@ footer a {
     <section>
         <h2>🚀 Ярлыки (перетащи на панель)</h2>
 
-        <!-- КНИГА v31 -->
+        <!-- КНИГА v40 -->
         <div class="bm-card">
             <div class="bm-header">
                 <div class="bm-icon">📚</div>
                 <div class="bm-info">
-                    <div class="bm-title">Книга v31 <span class="badge badge-v31">NEW</span></div>
-                    <div class="bm-desc">PDF / FB2 / EPUB → ZIP, JSON fallback → HTML</div>
+                    <div class="bm-title">Книга v40 <span class="badge badge-v40">NEW</span></div>
+                    <div class="bm-desc">🥇 ZIP → 🥈 PDF/JSON → 🥉 постраничка (всё автоматом)</div>
                 </div>
             </div>
             <div class="bm-actions">
-                <a href="#" data-bm="book" class="bookmarklet">📚 LitRes Книга v31</a>
+                <a href="#" data-bm="book" class="bookmarklet">📚 LitRes Книга v40</a>
                 <button class="copy-btn" data-copy="book">📋 Копировать код</button>
             </div>
             <details>
@@ -463,25 +424,6 @@ footer a {
             <details>
                 <summary>Показать код</summary>
                 <pre data-code="audio"></pre>
-            </details>
-        </div>
-
-        <!-- READER (JSON) -->
-        <div class="bm-card">
-            <div class="bm-header">
-                <div class="bm-icon">📖</div>
-                <div class="bm-info">
-                    <div class="bm-title">Reader (JSON) <span class="badge badge-new">NEW</span></div>
-                    <div class="bm-desc">Fallback когда ZIP 404 — качает главы читалки → HTML</div>
-                </div>
-            </div>
-            <div class="bm-actions">
-                <a href="#" data-bm="mini" class="bookmarklet">📖 LitRes Reader</a>
-                <button class="copy-btn" data-copy="mini">📋 Копировать код</button>
-            </div>
-            <details>
-                <summary>Показать код</summary>
-                <pre data-code="mini"></pre>
             </details>
         </div>
 
@@ -549,26 +491,29 @@ footer a {
     <section>
         <h2>🎬 Как использовать</h2>
 
-        <h3 style="margin-top: 20px;">📚 Для книг</h3>
+        <h3 style="margin-top: 20px;">📚 Для книг (v40)</h3>
         <ol>
             <li>Открой нужную <strong>книгу</strong> на <a href="https://www.litres.ru" target="_blank">litres.ru</a></li>
-            <li>Кликни закладку <strong>📚 LitRes Книга v31</strong></li>
+            <li>Кликни закладку <strong>📚 LitRes Книга v40</strong></li>
             <li>Внизу справа появится панель управления</li>
-            <li>Жми <strong>▶▶ Старт</strong> — скрипт сам найдёт ZIP или уйдёт в JSON fallback</li>
+            <li>Жми <strong>▶ Старт</strong> — скрипт сам решит что делать</li>
         </ol>
+
+        <div class="hint-green">
+            <strong>🎯 Логика v40 (авто):</strong>
+            <ul style="margin-top: 8px;">
+                <li>🥇 <strong>ZIP есть?</strong> → качает ZIP как есть (без распаковки)</li>
+                <li>🥈 <strong>000.js → %PDF?</strong> → качает готовый PDF</li>
+                <li>🥈 <strong>000.js → [{?</strong> → JSON главы → собирает HTML</li>
+                <li>🥉 <strong>PDF постраничка?</strong> → JPG/GIF → ZIP</li>
+            </ul>
+        </div>
 
         <h3 style="margin-top: 20px;">🎧 Для аудиокниг</h3>
         <ol>
             <li>Открой <strong>аудиокнигу</strong> (URL содержит <code>/audiobook/</code>)</li>
             <li>Кликни закладку <strong>🎧 LitRes Аудио</strong></li>
             <li>Выбери: <strong>📦 ZIP</strong> (один файл), <strong>🎵 M4B</strong> (audiobook) или <strong>🎧 Главы</strong> (диапазон)</li>
-        </ol>
-
-        <h3 style="margin-top: 20px;">📖 Если ZIP не работает</h3>
-        <ol>
-            <li>В v31: включён <strong>📖 JSON</strong> чекбокс → автоматом уйдёт в JSON fallback</li>
-            <li>Или жми фиолетовую кнопку <strong>📖 Reader (JSON)</strong> в панели</li>
-            <li>Результат: красивый HTML-файл (открой в браузере, <kbd>Ctrl</kbd>+<kbd>P</kbd> → Save as PDF)</li>
         </ol>
 
         <h3 style="margin-top: 20px;">🎵 Для Suno</h3>
@@ -595,18 +540,20 @@ footer a {
         <h3>📥 Куда качается?</h3>
         <p>В папку загрузок браузера. По умолчанию это <code>Загрузки</code> или <code>Downloads</code>.</p>
 
+        <h3>📚 Что качает Книга v40?</h3>
+        <ul>
+            <li><strong>🥇 ZIP</strong> — оригинальный ZIP от LitRes (FB2/EPUB), как есть</li>
+            <li><strong>🥈 PDF</strong> — если LitRes отдаёт готовый PDF</li>
+            <li><strong>🥈 HTML</strong> — если LitRes отдаёт JSON-главы (собирает в один HTML)</li>
+            <li><strong>🥉 Постраничный ZIP</strong> — если PDF по картинкам (JPG/GIF + x64.rar)</li>
+        </ul>
+
         <h3>🎧 В каком формате аудио?</h3>
         <ul>
             <li><strong>📦 ZIP</strong> — готовый архив со всеми MP3-главами (от LitRes)</li>
             <li><strong>🎵 M4B</strong> — audiobook одним файлом с обложкой (для iPhone, VLC)</li>
             <li><strong>🎧 Главы</strong> — свой ZIP, можно выбрать диапазон</li>
         </ul>
-
-        <h3>📚 Что в ZIP книги?</h3>
-        <p>PDF-страницы (JPG/PNG) + инструменты конвертации <code>x64.rar</code> + README с инструкцией по сборке в PDF.</p>
-
-        <h3>📖 Что в JSON fallback?</h3>
-        <p>Один HTML-файл с текстом всей книги. Открой в браузере, потом <kbd>Ctrl</kbd>+<kbd>P</kbd> → Save as PDF. Если включён <strong>📦 Tools</strong> — соберётся ZIP с HTML + x64.rar.</p>
 
         <h3>🎵 Что качает Suno?</h3>
         <p>MP3-файлы треков с обложками, метаданными (название, автор, длительность). Работает как для отдельных треков, так и для плейлистов.</p>
@@ -616,7 +563,7 @@ footer a {
             <li>Обнови страницу (<kbd>F5</kbd>) и кликни закладку снова</li>
             <li>Проверь что залогинен в LitRes / Suno</li>
             <li>Открой <kbd>F12</kbd> → Console и посмотри ошибки</li>
-            <li>Попробуй другую закладку (Книга / Аудио / Reader)</li>
+            <li>Если v40 загружается как v31/v27 — обнови букмарклет (raw первым)</li>
         </ul>
     </section>
 
@@ -626,9 +573,6 @@ footer a {
 
 </div>
 
-<!-- ============================================ -->
-<!-- JAVASCRIPT -->
-<!-- ============================================ -->
 <script>
 // ============================================
 // НАСТРОЙКИ РЕПО
@@ -637,12 +581,11 @@ const REPO_CDN = 'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/';
 const REPO_RAW = 'https://raw.githubusercontent.com/dimasik-debug/Share/main/';
 
 // ============================================
-// УНИВЕРСАЛЬНЫЙ ЗАГРУЗЧИК С ПУРЖЕМ + ФОЛЛБЭКОМ
+// УНИВЕРСАЛЬНЫЙ ЗАГРУЗЧИК (raw первым — обход кэша)
 // ============================================
 function makeLoader(file, name) {
     return `javascript:(function(){` +
-        `try{fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/${file}',{mode:'no-cors'}).catch(function(){})}catch(e){}` +
-        `var u=['${REPO_CDN}${file}?t='+Date.now(),'${REPO_RAW}${file}?t='+Date.now()],i=0;` +
+        `var u=['${REPO_RAW}${file}?t='+Date.now(),'${REPO_CDN}${file}?t='+Date.now()],i=0;` +
         `function L(){if(i>=u.length){alert('❌ ${name} не загрузился');return}` +
         `var s=document.createElement('script');s.src=u[i++];` +
         `s.onload=function(){console.log('✅ ${name} загружен!')};` +
@@ -653,51 +596,37 @@ function makeLoader(file, name) {
 // БУКМАРКЛЕТЫ
 // ============================================
 
-// 1. Книга v31
-const BM_BOOK = makeLoader('litres-downloader-v31.js', 'Книга v31');
+// 1. Книга v40
+const BM_BOOK = makeLoader('litres-downloader-v40.js', 'Книга v40');
 
 // 2. Аудио v1.1
 const BM_AUDIO = makeLoader('litres-downloader-audio.js', 'Аудио v1.1');
 
-// 3. Reader Mini (JSON fallback)
-const BM_MINI = makeLoader('LitResMini.js', 'Reader Mini v1.0');
+// 3. Инструкция
+const BM_INFO = `javascript:(function(){window.open('${REPO_RAW}litres.html','_blank')})();`;
 
-// 4. Инструкция (открывает эту страницу)
-const BM_INFO = `javascript:(function(){window.open('${REPO_CDN}litres.html','_blank')})();`;
+// 4. Suno Downloader
+const BM_SUNO = makeLoader('suno-downloader.js', 'Suno Downloader v3.1');
 
-// 5. Suno Downloader
-const BM_SUNO = `javascript:(function(){` +
-    `var file='suno-downloader.js';` +
-    `try{fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/'+file,{mode:'no-cors'}).catch(function(){})}catch(e){}` +
-    `var urls=['https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/'+file+'?t='+Date.now(),'https://raw.githubusercontent.com/dimasik-debug/Share/main/'+file+'?t='+Date.now()];` +
-    `var i=0;` +
-    `function load(){` +
-    `if(i>=urls.length){alert('❌ Suno Downloader не загрузился');return}` +
-    `var s=document.createElement('script');s.src=urls[i++];` +
-    `s.onload=function(){console.log('✅ Suno Downloader v3.1 загружен!')};` +
-    `s.onerror=function(){load()};` +
-    `document.head.appendChild(s)}load()})();`;
-
-// 6. Chooser (выбор)
+// 5. Chooser (выбор)
 const BM_CHOOSER = `javascript:(function(){` +
     `if(window.__lrp)return;window.__lrp=1;` +
     `var A=location.pathname.indexOf('/audiobook/')>-1,` +
-    `B='${REPO_CDN}',F='${REPO_RAW}',` +
-    `S={book:{f:'litres-downloader-v31.js',n:'Книга v31'},audio:{f:'litres-downloader-audio.js',n:'Аудио v1.1'},mini:{f:'LitResMini.js',n:'Reader Mini'}};` +
-    `function L(k){var s=S[k],u=[B+s.f+'?t='+Date.now(),F+s.f+'?t='+Date.now()],i=0;` +
+    `R='${REPO_RAW}',C='${REPO_CDN}',` +
+    `S={book:{f:'litres-downloader-v40.js',n:'Книга v40'},audio:{f:'litres-downloader-audio.js',n:'Аудио v1.1'}};` +
+    `function L(k){var s=S[k],u=[R+s.f+'?t='+Date.now(),C+s.f+'?t='+Date.now()],i=0;` +
     `function t(){if(i>=u.length){alert('❌ '+s.n+' не загрузился');return}` +
     `var e=document.createElement('script');e.src=u[i++];` +
     `e.onload=function(){console.log('✅ '+s.n+' загружен')};e.onerror=t;` +
-    `document.head.appendChild(e)}t();C()}` +
-    `function C(){var p=document.getElementById('__lrp');p&&p.remove();window.__lrp=0}` +
+    `document.head.appendChild(e)}t();X()}` +
+    `function X(){var p=document.getElementById('__lrp');p&&p.remove();window.__lrp=0}` +
     `var h='<div id="__lrp" style="position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif">' +` +
-    `'<div style="background:#fff;border-radius:14px;padding:24px;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +` +
+    `'<div style="background:#fff;border-radius:14px;padding:24px;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +` +
     `'<div style="font-size:20px;font-weight:800;color:#1a2a4a;margin-bottom:6px">📚 LitRes Downloader</div>' +` +
     `'<div style="color:#6a8aaa;font-size:13px;margin-bottom:16px">Выбери скрипт:</div>' +` +
     `'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">' +` +
-    `'<button data-k="book" style="padding:12px 14px;background:'+(A?'#f0f4fa':'#1a3a6a')+';color:'+(A?'#6a8aaa':'#fff')+';border:2px solid '+(A?'#d0dae4':'#1a3a6a')+';border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;position:relative">📚 <b>Книга v31</b><div style="font-size:11px;font-weight:400;margin-top:2px;opacity:0.85">ZIP + JSON fallback</div>'+(A?'':'<div style="position:absolute;top:10px;right:10px;font-size:9px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:6px">рекоменд.</div>')+'</button>' +` +
+    `'<button data-k="book" style="padding:12px 14px;background:'+(A?'#f0f4fa':'#1a3a6a')+';color:'+(A?'#6a8aaa':'#fff')+';border:2px solid '+(A?'#d0dae4':'#1a3a6a')+';border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;position:relative">📚 <b>Книга v40</b><div style="font-size:11px;font-weight:400;margin-top:2px;opacity:0.85">🥇 ZIP → 🥈 PDF/JSON → 🥉 постраничка</div>'+(A?'':'<div style="position:absolute;top:10px;right:10px;font-size:9px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:6px">рекоменд.</div>')+'</button>' +` +
     `'<button data-k="audio" style="padding:12px 14px;background:'+(A?'#1a3a6a':'#f0f4fa')+';color:'+(A?'#fff':'#6a8aaa')+';border:2px solid '+(A?'#1a3a6a':'#d0dae4')+';border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;position:relative">🎧 <b>Аудио v1.1</b><div style="font-size:11px;font-weight:400;margin-top:2px;opacity:0.85">MP3 / M4B / ZIP</div>'+(A?'<div style="position:absolute;top:10px;right:10px;font-size:9px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:6px">рекоменд.</div>':'')+'</button>' +` +
-    `'<button data-k="mini" style="padding:12px 14px;background:#f0f4fa;color:#6a8aaa;border:2px solid #d0dae4;border-radius:10px;cursor:pointer;font-family:inherit;text-align:left">📖 <b>Reader Mini</b><div style="font-size:11px;font-weight:400;margin-top:2px;opacity:0.85">JSON-главы → HTML</div></button>' +` +
     `'</div>' +` +
     `'<div style="display:flex;gap:8px">' +` +
     `'<button data-a="auto" style="flex:1;padding:10px;background:#27ae60;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">⚡ Авто ('+(A?'Аудио':'Книга')+')</button>' +` +
@@ -707,22 +636,21 @@ const BM_CHOOSER = `javascript:(function(){` +
     `document.body.insertAdjacentHTML('beforeend',h);` +
     `var p=document.getElementById('__lrp');` +
     `p.addEventListener('click',function(e){` +
-    `if(e.target===p)return C();` +
+    `if(e.target===p)return X();` +
     `var b=e.target.closest('button');if(!b)return;` +
     `var k=b.dataset.k,a=b.dataset.a;` +
-    `if(a==='close')return C();` +
+    `if(a==='close')return X();` +
     `if(a==='auto')return L(A?'audio':'book');` +
     `k&&L(k)});` +
     `document.addEventListener('keydown',function esc(e){` +
-    `e.key==='Escape'&&(C(),document.removeEventListener('keydown',esc))})})();`;
+    `e.key==='Escape'&&(X(),document.removeEventListener('keydown',esc))})})();`;
 
 // ============================================
-// РЕГИСТРАЦИЯ ВСЕХ БУКМАРКЛЕТОВ
+// РЕГИСТРАЦИЯ
 // ============================================
 const BOOKMARKLETS = {
     book: BM_BOOK,
     audio: BM_AUDIO,
-    mini: BM_MINI,
     chooser: BM_CHOOSER,
     suno: BM_SUNO,
     info: BM_INFO
@@ -733,7 +661,6 @@ const BOOKMARKLETS = {
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
 
-    // Применяем href на <a> и текст в <pre>
     document.querySelectorAll('a[data-bm]').forEach(a => {
         const key = a.dataset.bm;
         if (BOOKMARKLETS[key]) {
@@ -749,7 +676,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Кнопки "Копировать код"
     document.querySelectorAll('button[data-copy]').forEach(btn => {
         btn.addEventListener('click', function() {
             const key = this.dataset.copy;
@@ -775,7 +701,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Табы браузеров
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', function() {
             const target = this.dataset.tab;
@@ -788,13 +713,13 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     console.log('📚 LitRes Downloader page loaded');
-    console.log('🎵 Suno Downloader включён');
-    console.log('📖 Reader Mini v1.0 включён');
-    console.log('🚀 Книга v31 включена');
+    console.log('🚀 Книга v40');
+    console.log('🎧 Аудио v1.1');
+    console.log('🎵 Suno Downloader');
 });
 
 // ============================================
-// FALLBACK КОПИРОВАНИЯ ДЛЯ СТАРЫХ БРАУЗЕРОВ
+// FALLBACK КОПИРОВАНИЯ
 // ============================================
 function fallbackCopy(text, onSuccess) {
     const ta = document.createElement('textarea');
