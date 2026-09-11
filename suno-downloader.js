@@ -1,339 +1,552 @@
 /**
- * Suno Downloader v5.0 — правильный AES-CTR (по sw.js)
+ * Suno Downloader v10.2 — Live Progress + Batch Bar
+ * 📊 Общий прогресс батча + живой МБ/скорость
+ * ✅ Working single-call decrypt · 🎨 Suno UI · 🔊 Soft sounds
  */
-(function sunoDownloaderV5() {
-    console.log('🎵 Suno Downloader v5.0 — правильный AES-CTR');
+(function sunoDownloaderV102() {
+    const VERSION = '10.2';
+    const MAX_ATTEMPTS = 3;
 
-    const S = 1.25;
-    const px = v => `${Math.round(v * S * 100) / 100}px`;
+    console.log(`%c🎵 Suno Downloader v${VERSION}`, 'color:#a994ff;font-size:16px;font-weight:bold;');
 
-    const state = {
-        clipId: null,
-        cdnUrl: null,
-        licenseKey: null,
-        licenseIv: null,
-        glt: null,
-        jwt: null,
-        resultBlob: null,
-        isRunning: false
+    const T0 = performance.now();
+    const ts = () => `+${((performance.now() - T0) / 1000).toFixed(2)}s`;
+
+    const SUNO = {
+        bgPrimary:'#000', bgSecondary:'#0e0e10',
+        border:'rgba(255,255,255,0.08)', textPrimary:'#fff',
+        textSecondary:'rgba(255,255,255,0.6)', textTertiary:'rgba(255,255,255,0.4)',
+        accent:'#a994ff', success:'#4ade80', danger:'#f87171', warning:'#fbbf24',
+        font:"'PP Neue Montreal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    };
+    const CS = {
+        accent:'color:#a994ff;font-weight:bold;', ok:'color:#4ade80;',
+        err:'color:#f87171;', warn:'color:#fbbf24;', dim:'color:#8a9aaa;',
+        ts:'color:#6a7a8a;font-style:italic;', net:'color:#7c5cff;', step:'color:#a994ff;font-weight:500;'
     };
 
-    // ===== Base64 → Uint8Array =====
+    // ===== Мягкие звуки =====
+    const Sound = {
+        ctx:null, enabled:true, masterGain:null,
+        init() {
+            if (this.ctx) return;
+            try {
+                this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.35;
+                this.masterGain.connect(this.ctx.destination);
+            } catch(e){ this.enabled=false; }
+        },
+        note(f, d=0.35, v=0.15, delay=0, type='sine') {
+            if (!this.enabled) return;
+            this.init(); if (!this.ctx) return;
+            try {
+                if (this.ctx.state==='suspended') this.ctx.resume();
+                const t = this.ctx.currentTime + delay;
+                const o = this.ctx.createOscillator(), g = this.ctx.createGain(), fl = this.ctx.createBiquadFilter();
+                fl.type='lowpass'; fl.frequency.value=3500; fl.Q.value=0.7;
+                o.type=type; o.frequency.setValueAtTime(f,t);
+                g.gain.setValueAtTime(0,t);
+                g.gain.linearRampToValueAtTime(v,t+0.04);
+                g.gain.setValueAtTime(v,t+d*0.6);
+                g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+                o.connect(fl); fl.connect(g); g.connect(this.masterGain);
+                o.start(t); o.stop(t+d+0.05);
+            } catch(e){}
+        },
+        chord(fs,d=0.5,v=0.12,type='sine'){ fs.forEach((f,i)=>this.note(f,d+i*0.05,v*(1-i*0.15),i*0.03,type)); },
+        glide(a,b,d=0.3,v=0.12){
+            if (!this.enabled) return;
+            this.init(); if (!this.ctx) return;
+            try {
+                if (this.ctx.state==='suspended') this.ctx.resume();
+                const t=this.ctx.currentTime;
+                const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+                o.type='sine'; o.frequency.setValueAtTime(a,t);
+                o.frequency.exponentialRampToValueAtTime(b,t+d);
+                g.gain.setValueAtTime(0,t);
+                g.gain.linearRampToValueAtTime(v,t+0.05);
+                g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+                o.connect(g); g.connect(this.masterGain);
+                o.start(t); o.stop(t+d+0.05);
+            } catch(e){}
+        },
+        click(){ this.note(587,0.12,0.08,0,'sine'); },
+        start(){ this.chord([349,440,523],0.5,0.10); },
+        trackDone(){ this.note(784,0.3,0.12,0,'sine'); this.note(988,0.3,0.10,0.08,'sine'); this.note(1175,0.4,0.08,0.16,'sine'); },
+        complete(){ this.chord([523,659,784,1047],0.8,0.10,'triangle'); this.glide(523,1047,0.6,0.06); },
+        error(){ this.note(294,0.35,0.09,0,'sine'); this.note(247,0.5,0.07,0.15,'sine'); },
+        save(){ this.note(1047,0.15,0.06,0,'triangle'); }
+    };
+
+    const state = {
+        jwt:null, isBatch:false, batchCancel:false,
+        batchTotal:0, batchDone:0, batchErrors:0
+    };
+
     function b64(b) {
-        const bin = atob(b);
-        const u = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        const bin = atob(b); const u = new Uint8Array(bin.length);
+        for (let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
         return u;
     }
 
-    // ===== Извлечение JWT из заголовков =====
-    function extractAuth(headers) {
-        if (!headers) return null;
-        let auth = null;
-        if (headers instanceof Headers) {
-            auth = headers.get('Authorization') || headers.get('authorization');
-        } else if (Array.isArray(headers)) {
-            for (const [k, v] of headers) if (k.toLowerCase() === 'authorization') auth = v;
-        } else if (typeof headers === 'object') {
-            auth = headers['Authorization'] || headers['authorization'] || headers['AUTHORIZATION'];
-        }
-        if (typeof auth === 'string') return auth.replace(/^Bearer\s+/i, '');
-        return null;
+    async function getJwt(force=false) {
+        if (state.jwt && !force) return state.jwt;
+        try {
+            if (window.Clerk?.session?.getToken) {
+                const t = await window.Clerk.session.getToken({skipCache:force});
+                if (t && typeof t==='string' && t.length>50) { state.jwt=t; return t; }
+            }
+        } catch(e){}
+        try {
+            const m = document.cookie.match(/(?:^|;\s*)__session=([^;]+)/);
+            if (m) {
+                const v = decodeURIComponent(m[1]);
+                if (v.length>100 && v.split('.').length===3) { state.jwt=v; return v; }
+            }
+        } catch(e){}
+        return state.jwt;
     }
 
-    // ===== Перехват =====
-    const origFetch = window.fetch;
-    window.fetch = function(...args) {
-        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-        const opts = args[1] || {};
-
-        // JWT
-        const auth = extractAuth(opts.headers);
-        if (auth && auth.length > 50 && !state.jwt) {
-            state.jwt = auth;
-            log('🔐 JWT перехвачен');
-            updateStats();
-        }
-
-        // CDN (напрямую или через SW HLS-параметр)
-        if ((url.includes('cloudfront.net') && url.includes('.m4a')) || url.includes('/_sw-mango/')) {
-            try {
-                const u = new URL(url);
-                const src = u.searchParams.get('src') || url;
-                const cid = u.searchParams.get('contentId');
-                if (src.includes('cloudfront') && !state.cdnUrl) {
-                    state.cdnUrl = src;
-                    const m = src.match(/\/clip\/([0-9a-f-]{36})/);
-                    if (m) state.clipId = m[1];
-                    else if (cid) state.clipId = cid;
-                    log(`🔒 CDN: ${src.split('/').pop()}`);
-                    updateStats();
-                }
-            } catch(e) {}
-        }
-
-        // License response
-        if (url.includes('/api/mango/rights')) {
-            return origFetch.apply(this, args).then(resp => {
-                resp.clone().json().then(d => {
-                    state.licenseKey = d.key;
-                    state.licenseIv = d.iv;
-                    state.glt = d.glt;
-                    log('🔑 License OK');
-                    updateStats();
-                }).catch(()=>{});
-                return resp;
-            });
-        }
-
-        return origFetch.apply(this, args);
-    };
+    async function timedFetch(url, opts={}, timeoutMs=300000) {
+        const c = new AbortController();
+        const t = setTimeout(()=>c.abort(), timeoutMs);
+        try { const r = await fetch(url,{...opts, signal:c.signal}); clearTimeout(t); return r; }
+        catch(e){ clearTimeout(t); if (e.name==='AbortError') throw new Error(`Timeout ${timeoutMs}ms`); throw e; }
+    }
 
     // ===== UI =====
     document.body.insertAdjacentHTML('beforeend', `
-        <div id="sd6_ui" style="position:fixed;bottom:${px(16)};right:${px(16)};z-index:99999;
-            background:#fff;color:#1a2a4a;border-radius:${px(14)};padding:${px(14)} ${px(16)};
-            font-family:'Segoe UI',Arial,sans-serif;font-size:${px(12)};width:${px(400)};
-            box-shadow:0 ${px(8)} ${px(32)} rgba(0,0,0,0.15);border:1px solid rgba(26,42,74,0.08);">
+        <link rel="preload" href="https://suno.com/static-p/PPNeueMontreal-Regular.7a832673.woff" as="font" type="font/woff" crossorigin>
+        <style>
+            @font-face{font-family:'PP Neue Montreal';src:url('https://suno.com/static-p/PPNeueMontreal-Regular.7a832673.woff') format('woff');font-weight:400;font-display:swap;}
+            @font-face{font-family:'PP Neue Montreal';src:url('https://suno.com/static-p/PPNeueMontreal-Medium.8b97a885.woff') format('woff');font-weight:500;font-display:swap;}
+            #sunodl{animation:sunodl-in 0.4s cubic-bezier(0.16,1,0.3,1);}
+            @keyframes sunodl-in{from{opacity:0;transform:translateY(20px) scale(0.96);}to{opacity:1;transform:translateY(0) scale(1);}}
+            .sunodl-btn{padding:10px 16px;border-radius:999px;font-family:'PP Neue Montreal',sans-serif;font-size:13px;font-weight:500;border:1px solid transparent;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;}
+            .sunodl-btn-accent{background:linear-gradient(135deg,#a994ff,#7c5cff);color:#fff;box-shadow:0 4px 20px rgba(124,92,255,0.35);}
+            .sunodl-btn-accent:hover{box-shadow:0 6px 24px rgba(124,92,255,0.5);transform:translateY(-1px);}
+            .sunodl-btn-accent:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+            .sunodl-btn-danger{background:rgba(248,113,113,0.15);color:#f87171;border:1px solid rgba(248,113,113,0.2);}
+            .sunodl-icon-btn{width:32px;height:32px;padding:0;border-radius:10px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);border:none;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;font-size:14px;}
+            .sunodl-icon-btn:hover{background:rgba(255,255,255,0.1);color:#fff;}
+            #sunodl-log::-webkit-scrollbar{width:6px;}
+            #sunodl-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px;}
+            .sunodl-pulse{animation:sunodl-pulse 2s ease-in-out infinite;}
+            @keyframes sunodl-pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+            .sunodl-progress-bar{width:100%;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;}
+            .sunodl-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#a994ff,#7c5cff);transition:width 0.3s ease;}
+            .sunodl-progress-fill.done{background:linear-gradient(90deg,#4ade80,#22c55e);}
+            .sunodl-progress-fill.error{background:linear-gradient(90deg,#f87171,#dc2626);}
+            .sunodl-progress-fill.license{background:linear-gradient(90deg,#fbbf24,#f59e0b);}
+        </style>
 
-            <div style="display:flex;align-items:center;gap:${px(8)};margin-bottom:${px(10)};">
-                <div style="font-size:${px(20)};">🎵</div>
-                <div style="flex:1;">
-                    <div style="font-weight:800;font-size:${px(14)};">Suno <span style="color:#1a5a9a;">Downloader</span></div>
-                    <div style="font-size:${px(9)};color:#8a9aaa;text-transform:uppercase;">v5.0 • AES-CTR</div>
+        <div id="sunodl" style="position:fixed;bottom:16px;right:16px;z-index:99999;background:${SUNO.bgPrimary};color:${SUNO.textPrimary};font-family:${SUNO.font};width:520px;max-width:calc(100vw - 32px);border-radius:20px;border:1px solid ${SUNO.border};box-shadow:0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.02) inset;overflow:hidden;">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid ${SUNO.border};">
+                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,${SUNO.accent},#7c5cff);display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 16px rgba(124,92,255,0.3);">🎵</div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:500;font-size:15px;letter-spacing:-0.2px;">Suno Downloader</div>
+                    <div style="font-size:11px;color:${SUNO.textTertiary};letter-spacing:0.3px;margin-top:1px;">v${VERSION} · live progress · auto-save</div>
                 </div>
-                <button id="sd6_close" style="background:rgba(26,42,74,0.05);border:none;color:#8a9aaa;cursor:pointer;font-size:${px(14)};padding:${px(3)} ${px(7)};border-radius:${px(6)};">✕</button>
+                <button id="sunodl-sound" class="sunodl-icon-btn" title="Звук">🔊</button>
+                <button id="sunodl-clear" class="sunodl-icon-btn" title="Очистить">🗑</button>
+                <button id="sunodl-close" class="sunodl-icon-btn" title="Закрыть">✕</button>
             </div>
 
-            <div id="sd6_stats" style="background:#f0f7ff;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};border-left:${px(3)} solid #1a5a9a;font-size:${px(11)};line-height:1.5;">
-                ⏳ Ждём данные... Включи трек.
+            <div id="sunodl-status" style="padding:14px 18px;border-bottom:1px solid ${SUNO.border};display:flex;align-items:center;gap:10px;">
+                <div id="sunodl-status-dot" class="sunodl-pulse" style="width:8px;height:8px;border-radius:50%;background:${SUNO.accent};flex-shrink:0;"></div>
+                <div id="sunodl-status-text" style="font-size:13px;color:${SUNO.textSecondary};">Инициализация...</div>
             </div>
 
-            <div style="background:#f0f4fa;border-radius:${px(8)};padding:${px(8)} ${px(10)};margin-bottom:${px(8)};">
-                <div id="sd6_log" style="font-size:${px(10)};color:#6a8aaa;background:#e8eef4;padding:${px(6)};border-radius:${px(4)};max-height:${px(140)};overflow-y:auto;font-family:'Courier New',monospace;line-height:1.4;white-space:pre-wrap;">⏳ Готов</div>
+            <!-- ОБЩИЙ ПРОГРЕСС БАТЧА -->
+            <div id="sunodl-batch" style="display:none;padding:14px 18px;border-bottom:1px solid ${SUNO.border};">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+                    <div style="font-size:12px;color:${SUNO.textSecondary};letter-spacing:0.2px;">DOWNLOADS</div>
+                    <div style="display:flex;align-items:baseline;gap:6px;">
+                        <span id="sunodl-batch-done" style="font-size:20px;font-weight:500;color:${SUNO.textPrimary};">0</span>
+                        <span style="font-size:13px;color:${SUNO.textTertiary};">/ <span id="sunodl-batch-total">0</span></span>
+                    </div>
+                </div>
+                <div class="sunodl-progress-bar" style="margin-bottom:10px;">
+                    <div id="sunodl-batch-bar" class="sunodl-progress-fill done" style="width:0%;"></div>
+                </div>
+                <div id="sunodl-batch-stats" style="display:flex;justify-content:space-between;font-size:10px;color:${SUNO.textTertiary};font-family:'SF Mono',monospace;">
+                    <span id="sunodl-batch-ok">✓ 0 OK</span>
+                    <span id="sunodl-batch-err">✕ 0 errors</span>
+                </div>
             </div>
 
-            <div style="display:flex;gap:${px(4)};">
-                <button id="sd6_go" style="flex:2;padding:${px(10)};background:#27ae60;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(12)};">⬇ Скачать</button>
-                <button id="sd6_save" style="flex:1;padding:${px(10)};background:#1a3a6a;color:#fff;border:none;border-radius:${px(6)};cursor:pointer;font-weight:700;font-size:${px(11)};opacity:0.5;">💾</button>
+            <!-- ТЕКУЩИЙ ТРЕК -->
+            <div id="sunodl-current" style="display:none;padding:14px 18px;border-bottom:1px solid ${SUNO.border};">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+                    <div id="sunodl-current-title" style="font-size:13px;color:${SUNO.textPrimary};font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;">—</div>
+                    <div id="sunodl-current-count" style="font-size:13px;color:${SUNO.textTertiary};">0/0</div>
+                </div>
+                <div class="sunodl-progress-bar" style="margin-bottom:8px;"><div id="sunodl-current-bar" class="sunodl-progress-fill" style="width:0%;"></div></div>
+                <div id="sunodl-current-stage" style="font-size:11px;color:${SUNO.textSecondary};font-family:'SF Mono',monospace;">—</div>
             </div>
 
-            <div id="sd6_status" style="font-size:${px(10)};color:#6a8aaa;text-align:center;padding:${px(4)} 0;border-top:1px solid #e8eef4;margin-top:${px(8)};">⏳ Готов</div>
+            <div style="padding:14px 18px;border-bottom:1px solid ${SUNO.border};">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:11px;color:${SUNO.textTertiary};letter-spacing:0.3px;font-weight:500;">LOG</span>
+                    <span style="font-size:10px;color:${SUNO.textTertiary};">live · console too</span>
+                </div>
+                <div id="sunodl-log" style="font-size:11px;color:${SUNO.textSecondary};background:${SUNO.bgSecondary};padding:12px 14px;border-radius:12px;max-height:200px;overflow-y:auto;font-family:'SF Mono',Consolas,'Courier New',monospace;line-height:1.6;border:1px solid ${SUNO.border};"></div>
+            </div>
+
+            <div style="display:flex;gap:8px;padding:16px 18px;">
+                <button id="sunodl-all" class="sunodl-btn sunodl-btn-accent" style="flex:1;padding:12px;"><span style="font-size:15px;">⬇</span> Скачать всё</button>
+                <button id="sunodl-stop" class="sunodl-btn sunodl-btn-danger" style="display:none;">⏹ Стоп</button>
+            </div>
+
+            <div style="padding:0 18px 14px;display:flex;justify-content:space-between;font-size:10px;color:${SUNO.textTertiary};letter-spacing:0.2px;">
+                <span>💾 в Загрузки</span>
+                <span id="sunodl-timer">+0.00s</span>
+            </div>
         </div>
     `);
 
     const $ = id => document.getElementById(id);
-    const logEl = $('sd6_log');
-    const statsEl = $('sd6_stats');
-    const statusEl = $('sd6_status');
+    const logEl = $('sunodl-log');
+    const statusDot = $('sunodl-status-dot');
+    const statusText = $('sunodl-status-text');
+    const batchEl = $('sunodl-batch');
+    const currentEl = $('sunodl-current');
+    const timerEl = $('sunodl-timer');
 
-    function log(t) {
-        const ts = new Date().toLocaleTimeString();
-        logEl.textContent += `\n[${ts}] ${t}`;
+    setInterval(()=>{ timerEl.textContent = ts(); }, 100);
+
+    function log(t, color=SUNO.textSecondary, cs=CS.dim) {
+        const line = document.createElement('div');
+        line.innerHTML = `<span style="color:${SUNO.textTertiary};">[${ts()}]</span> <span style="color:${color};">${t}</span>`;
+        logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
-        console.log('[SD6]', t);
+        console.log(`%c[${ts()}] %c${t}`, CS.ts, cs);
     }
-    function updateStats() {
-        const b = [];
-        if (state.jwt) b.push('🔐 JWT');
-        if (state.cdnUrl) b.push('🔒 CDN');
-        if (state.licenseKey) b.push('🔑 Key');
-        if (state.licenseIv) b.push('🎲 IV');
-        if (state.clipId) b.push(`🆔 ${state.clipId.slice(0,8)}`);
-        statsEl.textContent = b.join(' • ') || '⏳ Ждём данные...';
-    }
-    function status(t, err) {
-        statusEl.textContent = t;
-        statusEl.style.color = err ? '#e74c3c' : '#6a8aaa';
+    const logOk = t => log('✓ '+t, SUNO.success, CS.ok);
+    const logErr = t => log('✕ '+t, SUNO.danger, CS.err);
+    const logWarn = t => log('⚠ '+t, SUNO.warning, CS.warn);
+    const logStep = t => log('▸ '+t, SUNO.accent, CS.step);
+    const logNet = t => log('🌐 '+t, '#8a7cff', CS.net);
+
+    function setStatus(text, kind='idle') {
+        statusText.textContent = text;
+        const c = {idle:SUNO.accent, ok:SUNO.success, err:SUNO.danger, warn:SUNO.warning};
+        statusDot.style.background = c[kind] || SUNO.accent;
+        statusDot.classList.toggle('sunodl-pulse', kind==='idle');
     }
 
-    // ===== License fetch (если не перехватили) =====
-    async function fetchLicense() {
-        if (state.licenseKey && state.licenseIv) return;
-        if (!state.clipId) throw new Error('Нет clipId');
+    // ===== ОБЩИЙ ПРОГРЕСС БАТЧА =====
+    function updateBatchProgress() {
+        batchEl.style.display = 'block';
+        $('sunodl-batch-done').textContent = state.batchDone;
+        $('sunodl-batch-total').textContent = state.batchTotal;
+        $('sunodl-batch-bar').style.width = state.batchTotal > 0
+            ? `${Math.round(state.batchDone/state.batchTotal*100)}%`
+            : '0%';
+        $('sunodl-batch-ok').textContent = `✓ ${state.batchDone} OK`;
+        $('sunodl-batch-err').textContent = `✕ ${state.batchErrors} errors`;
+    }
 
-        const headers = { 'Content-Type': 'application/json' };
-        let credentials = 'include';
-        if (state.jwt) {
-            headers['Authorization'] = 'Bearer ' + state.jwt;
-            credentials = 'same-origin';
+    function setCurrent(title, done, total, stage, pct, state_) {
+        currentEl.style.display = 'block';
+        $('sunodl-current-title').textContent = title;
+        $('sunodl-current-count').textContent = `${done}/${total}`;
+        $('sunodl-current-stage').textContent = stage;
+        const bar = $('sunodl-current-bar');
+        bar.style.width = pct+'%';
+        bar.className = 'sunodl-progress-fill' + (state_ === 'error' ? ' error' : state_ === 'done' ? ' done' : state_ === 'license' ? ' license' : '');
+    }
+
+    function sanitizeName(n) {
+        return (n||'suno_track').replace(/[\\/:*?"<>|]/g,'_').replace(/[\x00-\x1f]/g,'').replace(/\s+/g,' ').trim().slice(0,80)||'suno_track';
+    }
+
+    // ===== API =====
+    async function fetchAllClips() {
+        const jwt = await getJwt();
+        if (!jwt) throw new Error('Нет JWT');
+        const headers = { 'Content-Type':'application/json', 'Authorization':'Bearer '+jwt };
+        const tries = [
+            { method:'POST', url:'https://studio-api-prod.suno.com/api/feed/v3', body:JSON.stringify({}) },
+            { method:'POST', url:'https://studio-api-prod.suno.com/api/feed/v3', body:JSON.stringify({ limit:200 }) },
+        ];
+        for (const t of tries) {
+            try {
+                logNet('POST feed/v3');
+                const r = await timedFetch(t.url, { method:t.method, headers, credentials:'same-origin', body:t.body }, 20000);
+                log(`  ← HTTP ${r.status}`, r.ok?SUNO.success:SUNO.danger, r.ok?CS.ok:CS.err);
+                if (!r.ok) continue;
+                const data = await r.json();
+                const clips = data?.clips || data?.data || data?.items || [];
+                if (Array.isArray(clips) && clips.length>0) { logOk(`${clips.length} клипов`); return clips; }
+            } catch(e){ logErr(e.message); }
+        }
+        return [];
+    }
+
+    async function fetchLicense(clipId) {
+        const t = performance.now();
+        const jwt = await getJwt();
+        const r = await timedFetch('https://studio-api-prod.suno.com/api/mango/rights', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+jwt },
+            credentials:'same-origin',
+            body:JSON.stringify({ content_params:{ content_id:clipId, content_type:'clip' } })
+        }, 15000);
+        const ms = (performance.now()-t).toFixed(0);
+        if (!r.ok) throw new Error(`License HTTP ${r.status}`);
+        log(`  🔑 License · ${ms}ms`, SUNO.success, CS.ok);
+        return await r.json();
+    }
+
+    // ===== РАСШИФРОВКА с живым прогрессом =====
+    async function decryptClip(clipId, cdnUrl, license, onDownloadProgress) {
+        const jwt = await getJwt();
+        const wk = b64(license.key), wiv = b64(license.iv);
+        let ukr;
+        if (jwt) ukr = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(jwt));
+        else if (license.glt) ukr = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(license.glt));
+        else throw new Error('Нет JWT/glt');
+
+        const uk = await crypto.subtle.importKey('raw', ukr, { name:'AES-GCM' }, false, ['decrypt']);
+        const cidB = new TextEncoder().encode(clipId);
+        const ak = await crypto.subtle.decrypt({ name:'AES-GCM', iv:wk.slice(0,12), additionalData:cidB, tagLength:128 }, uk, wk.slice(12));
+        const aiv = await crypto.subtle.decrypt({ name:'AES-GCM', iv:wiv.slice(0,12), additionalData:cidB, tagLength:128 }, uk, wiv.slice(12));
+        const ctr = await crypto.subtle.importKey('raw', ak, { name:'AES-CTR' }, false, ['decrypt']);
+
+        logNet('CDN fetch');
+        const t1 = performance.now();
+        const r = await timedFetch(cdnUrl, {}, 300000);
+        if (!r.ok) throw new Error(`CDN HTTP ${r.status}`);
+
+        const total = parseInt(r.headers.get('content-length') || '0', 10);
+        if (total > 0) log(`  📦 ${(total/1048576).toFixed(2)} MB`, SUNO.accent, CS.accent);
+
+        const reader = r.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+        let lastTick = 0;
+        let lastPct = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            loaded += value.byteLength;
+
+            const now = performance.now();
+            if (now - lastTick > 200) {
+                lastTick = now;
+                const sec = (now - t1) / 1000;
+                const sp = sec > 0 ? (loaded/1048576/sec) : 0;
+                const pct = total > 0 ? (loaded/total*100) : 0;
+                if (onDownloadProgress) onDownloadProgress(loaded, total, sp, pct);
+                if (pct - lastPct >= 25) {
+                    lastPct = Math.floor(pct/25)*25;
+                    log(`  ⬇ ${Math.round(pct)}% · ${sp.toFixed(2)} MB/s`, SUNO.textTertiary, CS.dim);
+                }
+            }
         }
 
-        log(`📡 Запрос license ${state.jwt ? '(auth)' : '(anon)'}`);
-        const resp = await fetch('https://studio-api-prod.suno.com/api/mango/rights', {
-            method: 'POST',
-            headers,
-            credentials,
-            body: JSON.stringify({
-                content_params: {
-                    content_id: state.clipId,
-                    content_type: 'clip'
-                }
-            })
-        });
-        if (!resp.ok) throw new Error('license HTTP ' + resp.status);
-        const d = await resp.json();
-        state.licenseKey = d.key;
-        state.licenseIv = d.iv;
-        state.glt = d.glt;
-        log('🔑 License OK');
-        updateStats();
+        const enc = new Uint8Array(loaded);
+        let off = 0;
+        for (const c of chunks) { enc.set(c, off); off += c.byteLength; }
+
+        const dlMs = (performance.now()-t1).toFixed(0);
+        const dlMBps = (enc.byteLength/1048576/(dlMs/1000)).toFixed(2);
+        logOk(`Скачано ${(enc.byteLength/1048576).toFixed(2)} MB за ${(dlMs/1000).toFixed(1)}s (${dlMBps} MB/s)`);
+
+        log(`  🔓 Decrypt ${(enc.byteLength/1048576).toFixed(2)} MB...`, SUNO.accent, CS.accent);
+        const t2 = performance.now();
+        const dec = await crypto.subtle.decrypt(
+            { name:'AES-CTR', counter:new Uint8Array(aiv), length:128 },
+            ctr,
+            enc
+        );
+        logOk(`Расшифровано за ${(performance.now()-t2).toFixed(0)}ms`);
+
+        const head = new Uint8Array(dec.slice(0, 16));
+        const boxType = String.fromCharCode(head[4], head[5], head[6], head[7]);
+        const isFtyp = boxType === 'ftyp';
+        const isWebm = head[0]===0x1a && head[1]===0x45;
+
+        console.log(`%c  🔍 Header: boxType="${boxType}" · ${isFtyp||isWebm?'✅':'❌'}`, isFtyp||isWebm?'color:#4ade80;':'color:#f87171;font-weight:bold;');
+
+        if (!isFtyp && !isWebm) {
+            const hex = Array.from(head).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+            throw new Error(`Битый файл: "${boxType}" · HEX: ${hex}`);
+        }
+
+        const mime = isFtyp ? 'audio/mp4' : 'audio/webm';
+        return { blob: new Blob([dec], { type: mime }), isFtyp, size: dec.byteLength };
     }
 
-    // ===== Расшифровка + скачивание =====
-    async function download() {
-        if (state.isRunning) return;
-        state.isRunning = true;
-        logEl.textContent = '▶ Запуск';
-        status('⏳ Подготовка...');
+    function saveToDownloads(blob, title) {
+        const safe = sanitizeName(title);
+        const ext = blob.type.includes('webm') ? 'webm' : 'm4a';
+        const fn = `${safe}.${ext}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fn; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); }, 3000);
+        logOk(`💾 ${fn} (${(blob.size/1048576).toFixed(2)} MB)`);
+        return fn;
+    }
+
+    // ===== ОДИН ТРЕК =====
+    async function processTrack(clip, index, total) {
+        const title = clip.title || `suno_${clip.id.slice(0,8)}`;
+        const cdnUrl = clip.media_urls[0].url;
+        const tT0 = performance.now();
+
+        console.log(`\n%c═══════════════════════════════════════`, 'color:#a994ff;');
+        console.log(`%c▶ [${index+1}/${total}] "${title}"`, 'color:#a994ff;font-weight:bold;');
+
+        logStep(`[${index+1}/${total}] "${title.slice(0,35)}"`);
+        setCurrent(title, index, total, 'Начинаем...', 0, 'idle');
+
+        for (let attempt=1; attempt<=MAX_ATTEMPTS; attempt++) {
+            if (state.batchCancel) return;
+
+            if (attempt > 1) {
+                log(`  🔄 Попытка ${attempt}/${MAX_ATTEMPTS}`, SUNO.warning, CS.warn);
+                await new Promise(r=>setTimeout(r, 800*attempt));
+            }
+
+            try {
+                // 1) License
+                setCurrent(title, index, total, 'License...', 2, 'license');
+                const lic = await fetchLicense(clip.id);
+                setCurrent(title, index, total, 'License OK', 8, 'license');
+
+                // 2) Download + Decrypt
+                const { blob, size } = await decryptClip(clip.id, cdnUrl, lic, (loaded, totalBytes, speed, pct) => {
+                    const dispPct = 8 + pct * 0.82;
+                    const mb = (loaded/1048576).toFixed(1);
+                    const tot = (totalBytes/1048576).toFixed(1);
+                    setCurrent(title, index, total,
+                        `📥 ${mb} / ${tot} MB · ${speed.toFixed(2)} MB/s`,
+                        dispPct, 'idle');
+                });
+
+                // 3) Save
+                setCurrent(title, index, total, '💾 Сохранение...', 95, 'idle');
+                Sound.save();
+                saveToDownloads(blob, title);
+                setCurrent(title, index, total, '✅ Готово', 100, 'done');
+
+                const tMs = (performance.now()-tT0).toFixed(0);
+                console.log(`%c▶ [DONE] "${title}" · ${(size/1048576).toFixed(2)} MB · ${(tMs/1000).toFixed(1)}s`, 'color:#4ade80;font-weight:bold;');
+                logOk(`ГОТОВО · ${(tMs/1000).toFixed(1)}s`);
+
+                state.batchDone++;
+                updateBatchProgress(); // обновляем общий прогресс
+                setTimeout(()=>Sound.trackDone(), 100);
+                return;
+
+            } catch(e) {
+                console.log(`%c   ⚠ Попытка ${attempt}: ${e.message}`, 'color:#fbbf24;');
+                if (attempt >= MAX_ATTEMPTS) {
+                    state.batchErrors++;
+                    logErr(`"${title.slice(0,35)}" — ${e.message}`);
+                    setCurrent(title, index, total, `❌ ${e.message.slice(0,40)}`, 100, 'error');
+                    updateBatchProgress(); // обновляем ошибки
+                    Sound.error();
+                }
+            }
+        }
+    }
+
+    // ===== БАТЧ =====
+    async function downloadAll() {
+        if (state.isBatch) { logWarn('Батч идёт'); return; }
+
+        console.log(`\n%c╔════════════════════════════════════════╗`, 'color:#a994ff;font-weight:bold;');
+        console.log(`%c║  🚀 SUNO BATCH · v${VERSION}                     ║`, 'color:#a994ff;font-weight:bold;');
+        console.log(`%c╚════════════════════════════════════════╝`, 'color:#a994ff;font-weight:bold;');
+
+        Sound.start();
+        logStep('СТАРТ БАТЧА');
+
+        const jwt = await getJwt(true);
+        if (!jwt) { logErr('Нет JWT'); Sound.error(); return; }
+        logOk(`JWT · ${jwt.length} символов`);
+
+        state.isBatch = true;
+        state.batchCancel = false;
+        state.batchErrors = 0;
+        state.batchDone = 0;
+        $('sunodl-all').disabled = true;
+        $('sunodl-stop').style.display = 'inline-flex';
+        setStatus('Загрузка списка...', 'idle');
 
         try {
-            // Ждём CDN + clipId
-            if (!state.cdnUrl || !state.clipId) {
-                log('⏳ Ждём CDN... Включи трек на 3-5 сек');
-                const t0 = Date.now();
-                while ((!state.cdnUrl || !state.clipId) && Date.now() - t0 < 15000) {
-                    await new Promise(r => setTimeout(r, 200));
-                }
-            }
-            if (!state.cdnUrl) throw new Error('CDN не перехвачен');
-            if (!state.clipId) throw new Error('clipId не найден');
+            const clips = await fetchAllClips();
+            if (clips.length === 0) throw new Error('Список пуст');
+            const full = clips.filter(c => c?.media_urls?.[0]?.url?.includes('cloudfront'));
+            if (full.length === 0) throw new Error('Нет полных треков');
+            state.batchTotal = full.length;
+            logOk(`Треков: ${full.length}`);
 
-            // Ждём JWT
-            if (!state.jwt) {
-                log('⏳ Ждём JWT...');
-                const t0 = Date.now();
-                while (!state.jwt && Date.now() - t0 < 8000) {
-                    await new Promise(r => setTimeout(r, 200));
-                }
+            // Показываем блок общего прогресса
+            updateBatchProgress();
+
+            const bT0 = performance.now();
+            for (let i=0; i<full.length; i++) {
+                if (state.batchCancel) { logWarn('Отменено'); break; }
+                await processTrack(full[i], i, full.length);
             }
 
-            await fetchLicense();
-            if (!state.licenseKey) throw new Error('License не получен');
+            const tMs = (performance.now()-bT0).toFixed(0);
+            console.log(`\n%c╔════════════════════════════════════════╗`, 'color:#4ade80;font-weight:bold;');
+            console.log(`%c║  🎉 BATCH COMPLETE                     ║`, 'color:#4ade80;font-weight:bold;');
+            console.log(`%c║  ✅ ${state.batchDone}/${state.batchTotal} · ${state.batchErrors} ошибок · ${(tMs/1000).toFixed(1)}s`, 'color:#4ade80;font-weight:bold;');
+            console.log(`%c╚════════════════════════════════════════╝`, 'color:#4ade80;font-weight:bold;');
 
-            // ===== Шаг 1: декодируем base64 =====
-            const wrappedKey = b64(state.licenseKey);
-            const wrappedIv = b64(state.licenseIv);
-            log(`📦 wrappedKey: ${wrappedKey.length} байт`);
-            log(`📦 wrappedIv:  ${wrappedIv.length} байт`);
+            logOk(`ЗАВЕРШЕНО · ${(tMs/1000).toFixed(1)}s`);
+            logOk(`Успешно: ${state.batchDone}/${state.batchTotal}`);
+            if (state.batchErrors) logErr(`Ошибок: ${state.batchErrors}`);
 
-            // ===== Шаг 2: userKey = SHA-256(JWT) или SHA-256(glt) =====
-            let userKeyRaw;
-            if (state.jwt) {
-                log('🔐 userKey = SHA-256(JWT)');
-                userKeyRaw = await crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode(state.jwt)
-                );
-            } else if (state.glt) {
-                log('🔐 userKey = SHA-256(glt)');
-                userKeyRaw = await crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode(state.glt)
-                );
-            } else {
-                throw new Error('Нет JWT и нет glt');
-            }
-
-            const userKey = await crypto.subtle.importKey(
-                'raw', userKeyRaw,
-                { name: 'AES-GCM' },
-                false, ['decrypt']
-            );
-
-            const contentIdBytes = new TextEncoder().encode(state.clipId);
-
-            // ===== Шаг 3: расшифровываем wrappedKey → AES-CTR ключ =====
-            const aesKeyRaw = await crypto.subtle.decrypt(
-                {
-                    name: 'AES-GCM',
-                    iv: wrappedKey.slice(0, 12),
-                    additionalData: contentIdBytes,
-                    tagLength: 128
-                },
-                userKey,
-                wrappedKey.slice(12)
-            );
-            log(`🔑 contentKey: ${aesKeyRaw.byteLength} байт`);
-
-            // ===== Шаг 4: расшифровываем wrappedIv → AES-CTR counter =====
-            const aesIvRaw = await crypto.subtle.decrypt(
-                {
-                    name: 'AES-GCM',
-                    iv: wrappedIv.slice(0, 12),
-                    additionalData: contentIdBytes,
-                    tagLength: 128
-                },
-                userKey,
-                wrappedIv.slice(12)
-            );
-            log(`🎲 contentIv:  ${aesIvRaw.byteLength} байт`);
-
-            // ===== Шаг 5: импорт AES-CTR ключа =====
-            const aesCtrKey = await crypto.subtle.importKey(
-                'raw', aesKeyRaw,
-                { name: 'AES-CTR' },
-                false, ['decrypt']
-            );
-
-            // ===== Шаг 6: скачиваем зашифрованный файл =====
-            log(`📥 Скачиваем ${state.cdnUrl.split('/').pop()}`);
-            const cdnResp = await fetch(state.cdnUrl);
-            if (!cdnResp.ok) throw new Error('CDN HTTP ' + cdnResp.status);
-            const encData = await cdnResp.arrayBuffer();
-            log(`📦 Зашифровано: ${(encData.byteLength/1048576).toFixed(2)} MB`);
-
-            // ===== Шаг 7: AES-CTR расшифровка =====
-            const decData = await crypto.subtle.decrypt(
-                {
-                    name: 'AES-CTR',
-                    counter: new Uint8Array(aesIvRaw),
-                    length: 128
-                },
-                aesCtrKey,
-                encData
-            );
-            log(`🎉 Расшифровано: ${(decData.byteLength/1048576).toFixed(2)} MB`);
-
-            // Проверка заголовка
-            const head = new Uint8Array(decData.slice(0, 12));
-            const ascii = Array.from(head).map(b => (b>=32&&b<127)?String.fromCharCode(b):'.').join('');
-            log(`🔍 Header: ${ascii}`);
-
-            const mime = ascii.includes('ftyp') ? 'audio/mp4' :
-                         (head[0]===0x1a ? 'audio/webm' : 'audio/mp4');
-            state.resultBlob = new Blob([decData], { type: mime });
-            status('✅ Готово! Жми Сохранить');
-            $('sd6_save').style.opacity = '1';
-            log(`✅ Файл готов`);
+            setStatus(`Готово! ${state.batchDone}/${state.batchTotal}`, state.batchErrors?'warn':'ok');
+            Sound.complete();
 
         } catch(e) {
-            log(`❌ Ошибка: ${e.message}`);
-            status('❌ Ошибка', true);
-            console.error(e);
+            logErr(`КРИТИЧЕСКАЯ: ${e.message}`);
+            setStatus('Ошибка: '+e.message, 'err');
+            Sound.error();
         }
-        state.isRunning = false;
+
+        state.isBatch = false;
+        $('sunodl-all').disabled = false;
+        $('sunodl-stop').style.display = 'none';
     }
 
-    function save() {
-        if (!state.resultBlob) return log('❌ Нет данных');
-        const title = (document.querySelector('h1')?.textContent?.trim() || 'suno_track')
-            .replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-        const url = URL.createObjectURL(state.resultBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${title}.m4a`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-        log(`💾 Сохранено: ${title}.m4a`);
-    }
+    // ===== ОБРАБОТЧИКИ =====
+    $('sunodl-sound').onclick = () => {
+        Sound.enabled=!Sound.enabled;
+        $('sunodl-sound').textContent=Sound.enabled?'🔊':'🔇';
+        if (Sound.enabled) Sound.click();
+    };
+    $('sunodl-clear').onclick = () => { logEl.innerHTML=''; console.clear(); };
+    $('sunodl-close').onclick = () => {
+        if (state.isBatch && !confirm('Батч идёт. Закрыть?')) return;
+        state.batchCancel=true;
+        $('sunodl').remove();
+    };
+    $('sunodl-all').onclick = () => { Sound.click(); downloadAll(); };
+    $('sunodl-stop').onclick = () => { Sound.error(); state.batchCancel=true; logWarn('⏹ Стоп...'); };
 
-    $('sd6_go').onclick = download;
-    $('sd6_save').onclick = save;
-    $('sd6_close').onclick = () => $('sd6_ui').remove();
+    // ===== INIT =====
+    log(`Suno Downloader v${VERSION}`, SUNO.accent, CS.accent);
+    log(`Live progress · batch bar · single-call decrypt`, SUNO.textTertiary, CS.dim);
 
-    updateStats();
-    log('✅ Готов. Включи трек, потом жми «Скачать»');
-    status('⏳ Ждём данные');
-    console.log('✅ Suno Downloader v5.0 запущен');
+    (async () => {
+        const j = await getJwt();
+        if (j) { logOk('JWT готов'); setStatus('Готов к загрузке', 'ok'); }
+        else { logWarn('Ждём JWT...'); setStatus('Открой любой трек', 'warn'); }
+    })();
+
+    console.log(`%c✅ Suno Downloader v${VERSION} готов`, 'color:#4ade80;font-weight:bold;font-size:14px;');
 })();
