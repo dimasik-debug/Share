@@ -1226,5 +1226,21 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     let lt = document.title;
     setInterval(() => { if (document.title !== lt) { lt = document.title; handleUrlChange(); } }, 1500);
 
-    init();
+
+    
+    init().then(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('autostart_litres') === '1') {
+            console.log('🚀 Автозапуск по флагу autostart_litres');
+            setTimeout(() => {
+                if (typeof startSmart === 'function') {
+                    startSmart();
+                } else {
+                    console.warn('⚠️ startSmart не найдена');
+                }
+            }, 1500);  // 1.5 сек после init — уже безопасно
+        }
+    });
+
+    
 })();
