@@ -1,6 +1,6 @@
 /**
- * LitRes Downloader v44.0 FULL
- * 🧹 Автоочистка · 🎯 ОДНА КНОПКА · 🚀 АВТОСТАРТ
+ * LitRes Downloader v45.0
+ * 🎨 Тёмный UI (как Suno) · 🧹 Автоочистка · 🎯 ОДНА КНОПКА · 🚀 АВТОСТАРТ
  * 🔊 Звуки как в Suno · 🗕 Minimize · ✅ Баннер · 🔁 Повторить · ✅ Таб
  * 👤 Полный аккаунт · ☁️ GitHub push+pull · 🎬 Рука-анимация · 📦 Tools
  * 🔁 ZIP retry ×5 · ⏱ Таймауты · 🛡 Guard · 🎨 Цветные логи
@@ -8,8 +8,8 @@
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV44Full() {
-    console.log('%c🚀 LitRes Downloader v44.0 FULL', 'color:#a994ff;font-size:16px;font-weight:bold;');
+(function fullDownloaderV45() {
+    console.log('%c🚀 LitRes Downloader v45.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -19,7 +19,7 @@
             ['litres-downloader.js','litres-downloader-v29.js','litres-downloader-v30.js','litres-downloader-v31.js',
              'litres-downloader-v32.js','litres-downloader-v33.js','litres-downloader-v34.js','litres-downloader-v35.js',
              'litres-downloader-v36.js','litres-downloader-v37.js','litres-downloader-v38.js','litres-downloader-v40.js',
-             'litres-downloader-v40.7.js','litres-downloader-v42.js','litres-downloader-v43.js'
+             'litres-downloader-v40.7.js','litres-downloader-v42.js','litres-downloader-v43.js','litres-downloader-v44.js'
             ].forEach(function(f) {
                 fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' })
                     .then(function(){ console.log('✅ Purge:', f.split('/').pop()); })
@@ -27,9 +27,6 @@
             });
         } catch(e) {}
     })();
-
-    const S = 1.25;
-    const px = (v) => `${Math.round(v * S * 100) / 100}px`;
 
     // ═══════════════════════════════════════════════════════════
     // 🔊 SOUND (как в Suno)
@@ -471,7 +468,7 @@
                         if (fmt && (!bookInfo.format || bookInfo.format.name !== fmt.name)) {
                             bookInfo.format = fmt;
                             updateFormatDisplay();
-                            addLog(`📖 Формат: ${fmt.icon} ${fmt.name}`);
+                            addLog(`Формат: ${fmt.icon} ${fmt.name}`, 'step');
                         }
                         console.log(`✅ ZIP найден (попытка ${attempt})`);
                         return link;
@@ -480,11 +477,11 @@
             }
             if (attempt < maxRetries) {
                 const wait = got401 ? 2000 : 1200;
-                addLog(got401 ? `⏳ ZIP 401 — ждём (${attempt}/${maxRetries})...` : `⏳ ZIP retry ${attempt}/${maxRetries}...`);
+                addLog(got401 ? `ZIP 401 — ждём (${attempt}/${maxRetries})...` : `ZIP retry ${attempt}/${maxRetries}...`, 'warn');
                 await new Promise(res => setTimeout(res, wait));
             }
         }
-        addLog(`ℹ️ ZIP не найден за ${maxRetries} попыток`);
+        addLog(`ZIP не найден за ${maxRetries} попыток`, 'warn');
         return null;
     }
 
@@ -595,7 +592,7 @@ em { font-style: italic; } strong { font-weight: bold; }
 <h1 class="book-title">${safeTitle}</h1>
 <div class="meta">✍️ ${safeAuthor}</div>
 ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v44.0<br>Всего глав: ${chapters.length} • © 2026 Diminssoft</div>
+<div class="footer">📚 LitRes Downloader v45.0<br>Всего глав: ${chapters.length} • © 2026 Diminssoft</div>
 </body></html>`;
     }
 
@@ -627,103 +624,358 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     }
 
     // ═══════════════════════════════════════════════════════════
-    // UI
+    // 🎨 UI (тёмная тема как в Suno)
     // ═══════════════════════════════════════════════════════════
     document.body.insertAdjacentHTML('beforeend', `
         <style>
-            #litres_mini{animation:lm-in .3s ease-out;}
-            @keyframes lm-in{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-            #litres_downloader_ui{animation:ld-in .35s cubic-bezier(.16,1,.3,1);}
-            @keyframes ld-in{from{opacity:0;transform:translateY(20px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
-            #litres_downloader_ui ::-webkit-scrollbar{width:6px;}
-            #litres_downloader_ui ::-webkit-scrollbar-thumb{background:rgba(26,42,74,.15);border-radius:3px;}
-            #litres_log::-webkit-scrollbar{width:6px;}
-            #litres_log::-webkit-scrollbar-thumb{background:rgba(26,42,74,.15);border-radius:3px;}
+            @keyframes ldl-mini-in{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+            @keyframes ldl-in{from{opacity:0;transform:translateY(20px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
+
+            #litres_mini{
+                animation: ldl-mini-in .3s cubic-bezier(.16,1,.3,1);
+                position: fixed; bottom: 16px; right: 16px; z-index: 99999;
+                background: #000; border: 1px solid rgba(255,255,255,.08);
+                border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.7);
+                display: none; align-items: center; gap: 10px;
+                padding: 10px 14px; cursor: pointer;
+                transition: all .2s ease;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+            #litres_mini:hover{ box-shadow: 0 16px 48px rgba(74,138,244,.4); transform: translateY(-1px); }
+
+            #litres_downloader_ui{
+                animation: ldl-in .35s cubic-bezier(.16,1,.3,1);
+                position: fixed; bottom: 16px; right: 16px; z-index: 99999;
+                background: #0e0e10; color: #fff;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                width: 400px; max-width: calc(100vw - 32px);
+                border-radius: 20px;
+                border: 1px solid rgba(255,255,255,.08);
+                box-shadow: 0 24px 80px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.02) inset;
+                overflow: hidden;
+                display: flex; flex-direction: column;
+                max-height: calc(100vh - 32px);
+                user-select: none;
+                font-size: 13px;
+            }
+            #litres_downloader_ui *{ box-sizing: border-box; }
+            #litres_downloader_ui ::-webkit-scrollbar{ width: 6px; }
+            #litres_downloader_ui ::-webkit-scrollbar-thumb{ background: rgba(255,255,255,.1); border-radius: 3px; }
+            #litres_downloader_ui ::-webkit-scrollbar-track{ background: transparent; }
+
+            .ldl-header{
+                display: flex; align-items: center; gap: 12px;
+                padding: 14px 16px;
+                border-bottom: 1px solid rgba(255,255,255,.08);
+                flex-shrink: 0;
+            }
+            .ldl-logo{
+                width: 36px; height: 36px; border-radius: 10px;
+                background: linear-gradient(135deg, #1a5a9a, #4a8af4);
+                display: flex; align-items: center; justify-content: center;
+                font-size: 18px;
+                box-shadow: 0 4px 16px rgba(74,138,244,.35);
+                flex-shrink: 0;
+            }
+            .ldl-title{ font-weight: 700; font-size: 15px; letter-spacing: -.2px; line-height: 1.15; }
+            .ldl-title .accent{ color: #4a8af4; }
+            .ldl-subtitle{ font-size: 10px; color: rgba(255,255,255,.4); letter-spacing: .3px; text-transform: uppercase; margin-top: 2px; }
+
+            .ldl-icon-btn{
+                width: 30px; height: 30px; padding: 0;
+                border-radius: 9px;
+                background: rgba(255,255,255,.06);
+                color: rgba(255,255,255,.7);
+                border: none; cursor: pointer;
+                transition: all .2s;
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 13px;
+                flex-shrink: 0;
+            }
+            .ldl-icon-btn:hover{ background: rgba(255,255,255,.12); color: #fff; }
+
+            .ldl-body{
+                padding: 12px 16px;
+                overflow-y: auto;
+                flex: 1;
+                display: flex; flex-direction: column; gap: 10px;
+            }
+
+            .ldl-card{
+                background: rgba(255,255,255,.03);
+                border: 1px solid rgba(255,255,255,.06);
+                border-radius: 12px;
+                padding: 10px 12px;
+                font-size: 11px;
+                line-height: 1.5;
+            }
+            .ldl-card.book-card{
+                background: linear-gradient(135deg, rgba(74,138,244,.08), rgba(74,138,244,.03));
+                border-left: 3px solid #4a8af4;
+            }
+            .ldl-card-title{ font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .ldl-card-row{ color: rgba(255,255,255,.6); font-size: 11px; margin-top: 2px; }
+            .ldl-card-row .hl{ color: #4a8af4; font-weight: 600; }
+            .ldl-card-label{ font-size: 10px; color: rgba(255,255,255,.4); text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin-bottom: 6px; }
+
+            .ldl-progress-box{
+                background: rgba(255,255,255,.03);
+                border: 1px solid rgba(255,255,255,.06);
+                border-radius: 12px;
+                padding: 12px;
+            }
+            .ldl-status-row{ display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+            .ldl-hand{
+                font-size: 22px; width: 32px; text-align: center;
+                transition: transform .8s cubic-bezier(.34,1.56,.64,1);
+                flex-shrink: 0;
+            }
+            .ldl-status-text{ flex: 1; min-width: 0; }
+            .ldl-status-main{
+                font-weight: 600; font-size: 12px; color: #fff;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            }
+            .ldl-status-phase{ font-size: 10px; color: rgba(255,255,255,.4); font-family: 'SF Mono', Consolas, monospace; margin-top: 1px; }
+            .ldl-counter{
+                font-size: 15px; font-weight: 700; color: #4a8af4;
+                font-family: 'SF Mono', Consolas, monospace;
+                flex-shrink: 0;
+            }
+
+            .ldl-bar{
+                width: 100%; height: 6px;
+                background: rgba(255,255,255,.06);
+                border-radius: 3px; overflow: hidden;
+                margin-bottom: 8px;
+            }
+            .ldl-bar-fill{
+                height: 100%; width: 0%;
+                background: linear-gradient(90deg, #1a5a9a, #4a8af4);
+                border-radius: 3px;
+                transition: width .4s ease;
+            }
+
+            .ldl-progress-info{
+                display: flex; justify-content: space-between;
+                font-size: 10px; color: rgba(255,255,255,.5);
+                font-family: 'SF Mono', Consolas, monospace;
+                margin-bottom: 8px;
+            }
+            .ldl-progress-info .pct{ font-weight: 700; color: #4a8af4; }
+
+            .ldl-log{
+                font-size: 10px;
+                color: rgba(255,255,255,.55);
+                background: rgba(0,0,0,.4);
+                padding: 8px 10px;
+                border-radius: 8px;
+                max-height: 70px;
+                overflow-y: auto;
+                font-family: 'SF Mono', Consolas, monospace;
+                line-height: 1.5;
+                border: 1px solid rgba(255,255,255,.05);
+                word-break: break-word;
+            }
+
+            .ldl-result{
+                display: none;
+                padding: 12px 14px;
+                background: linear-gradient(135deg, rgba(39,174,96,.15), rgba(46,204,113,.08));
+                border: 1.5px solid rgba(39,174,96,.4);
+                border-radius: 12px;
+                font-size: 11px;
+                line-height: 1.6;
+            }
+            .ldl-result-title{
+                font-weight: 800; font-size: 13px; color: #2ecc71;
+                margin-bottom: 6px;
+            }
+            .ldl-result-line{ color: rgba(255,255,255,.8); }
+            .ldl-result-line b{ color: #fff; }
+            .ldl-result-line .fmt{ color: #4a8af4; }
+
+            .ldl-buttons{
+                display: flex; gap: 6px;
+                padding: 0 16px 12px;
+                flex-shrink: 0;
+            }
+            .ldl-btn{
+                padding: 12px 14px;
+                border-radius: 10px;
+                border: none;
+                font-family: inherit;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all .2s;
+                display: inline-flex; align-items: center; justify-content: center;
+                gap: 6px;
+                white-space: nowrap;
+            }
+            .ldl-btn-main{
+                flex: 3;
+                background: linear-gradient(135deg, #27ae60, #2ecc71);
+                color: #fff;
+                box-shadow: 0 4px 16px rgba(46,204,113,.35);
+            }
+            .ldl-btn-main:hover:not(:disabled){ box-shadow: 0 6px 20px rgba(46,204,113,.5); transform: translateY(-1px); }
+            .ldl-btn-main.repeat{
+                background: linear-gradient(135deg, #1a5a9a, #4a8af4);
+                box-shadow: 0 4px 16px rgba(74,138,244,.4);
+            }
+            .ldl-btn-main.repeat:hover:not(:disabled){ box-shadow: 0 6px 20px rgba(74,138,244,.55); }
+            .ldl-btn-main:disabled{ opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+            .ldl-btn-pause{
+                flex: 1;
+                background: rgba(255,255,255,.06);
+                color: rgba(255,255,255,.7);
+                border: 1px solid rgba(255,255,255,.08);
+            }
+            .ldl-btn-pause:hover:not(:disabled){ background: rgba(240,165,0,.15); color: #f0a500; }
+            .ldl-btn-pause.active{ background: linear-gradient(135deg, #f0a500, #f39c12); color: #fff; border-color: transparent; }
+            .ldl-btn-pause:disabled{ opacity: .3; cursor: not-allowed; }
+            .ldl-btn-stop{
+                flex: 1;
+                background: rgba(255,255,255,.06);
+                color: rgba(255,255,255,.7);
+                border: 1px solid rgba(255,255,255,.08);
+            }
+            .ldl-btn-stop:hover:not(:disabled){ background: rgba(231,76,60,.15); color: #e74c3c; }
+            .ldl-btn-stop:disabled{ opacity: .3; cursor: not-allowed; }
+
+            .ldl-toggles{
+                display: flex; align-items: center; gap: 12px;
+                padding: 10px 14px;
+                background: rgba(255,255,255,.03);
+                border: 1px solid rgba(255,255,255,.06);
+                border-radius: 10px;
+                margin: 0 16px 10px;
+                font-size: 11px;
+                flex-wrap: wrap;
+                flex-shrink: 0;
+            }
+            .ldl-toggle{
+                display: inline-flex; align-items: center; gap: 6px;
+                cursor: pointer; font-weight: 600;
+                color: rgba(255,255,255,.75);
+                transition: color .2s;
+                user-select: none;
+            }
+            .ldl-toggle:hover{ color: #fff; }
+            .ldl-toggle input{
+                width: 14px; height: 14px;
+                cursor: pointer; margin: 0;
+                accent-color: #4a8af4;
+            }
+            .ldl-toggle.force input{ accent-color: #e74c3c; }
+            .ldl-toggle.auto input{ accent-color: #27ae60; }
+            .ldl-toggle.tools input{ accent-color: #27ae60; }
+            .ldl-force-status{
+                margin-left: auto;
+                font-size: 10px; color: rgba(255,255,255,.5);
+                background: rgba(255,255,255,.06);
+                padding: 2px 8px;
+                border-radius: 8px;
+                font-family: 'SF Mono', Consolas, monospace;
+                transition: all .2s;
+            }
+            .ldl-force-status.on{ color: #e74c3c; background: rgba(231,76,60,.15); }
+
+            .ldl-footer{
+                padding: 0 16px 14px;
+                display: flex; justify-content: space-between; align-items: center;
+                font-size: 10px; color: rgba(255,255,255,.4);
+                flex-shrink: 0;
+                gap: 8px;
+            }
+            #ldl-status-line{ flex: 1; text-align: center; font-family: 'SF Mono', Consolas, monospace; }
+            #ldl-zip-info{ color: rgba(255,255,255,.5); font-family: 'SF Mono', Consolas, monospace; display: none; }
         </style>
 
-        <div id="litres_mini" title="Развернуть LitRes Downloader" style="display:none;position:fixed;bottom:${px(16)};right:${px(16)};z-index:99999;background:#fff;border:1px solid rgba(26,42,74,0.08);border-radius:${px(14)};box-shadow:0 ${px(12)} ${px(40)} rgba(0,0,0,0.15);align-items:center;gap:${px(10)};padding:${px(10)} ${px(14)};cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;transition:all .2s;user-select:none;">
-            <div style="width:${px(30)};height:${px(30)};border-radius:${px(9)};background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:${px(15)};color:#fff;box-shadow:0 ${px(4)} ${px(12)} rgba(26,90,154,0.35);">📚</div>
-            <div style="display:flex;flex-direction:column;line-height:1.2;">
-                <div style="font-size:${px(11)};color:#1a2a4a;font-weight:700;">LitRes DL</div>
-                <div id="litres_mini_status" style="font-size:${px(9)};color:#6a8aaa;font-family:'Courier New',monospace;max-width:${px(180)};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">готов</div>
+        <div id="litres_mini" title="Развернуть LitRes Downloader">
+            <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 4px 12px rgba(74,138,244,.4);flex-shrink:0;">📚</div>
+            <div style="display:flex;flex-direction:column;line-height:1.25;min-width:0;">
+                <div style="font-size:11px;color:#fff;font-weight:700;">LitRes DL</div>
+                <div id="litres_mini_status" style="font-size:9px;color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">готов</div>
             </div>
-            <div id="litres_mini_badge" style="display:none;background:#1a5a9a;color:#fff;font-size:${px(9)};font-weight:bold;padding:${px(2)} ${px(7)};border-radius:${px(8)};font-family:'Courier New',monospace;">0%</div>
-            <div style="font-size:${px(13)};color:#8a9aaa;">▲</div>
+            <div id="litres_mini_badge" style="display:none;background:#4a8af4;color:#fff;font-size:9px;font-weight:bold;padding:2px 7px;border-radius:8px;font-family:'SF Mono',Consolas,monospace;">0%</div>
+            <div style="font-size:13px;color:rgba(255,255,255,.4);">▲</div>
         </div>
 
-        <div id="litres_downloader_ui" style="position: fixed; bottom: ${px(16)}; right: ${px(16)}; z-index: 99999; background: #fff; color: #1a2a4a; border-radius: ${px(14)}; padding: ${px(14)} ${px(16)}; font-family: 'Segoe UI', Arial, sans-serif; font-size: ${px(12)}; width: ${px(400)}; box-shadow: 0 ${px(8)} ${px(32)} rgba(0,0,0,0.15); border: 1px solid rgba(26,42,74,0.08); user-select: none; max-height: 95vh; overflow-y: auto;">
-
-            <div style="display: flex; align-items: center; gap: ${px(8)}; margin-bottom: ${px(10)};">
-                <div style="font-size: ${px(20)};">📚</div>
-                <div style="flex: 1;">
-                    <div style="font-weight: 800; font-size: ${px(14)}; line-height: 1.1;">LitRes <span style="color: #1a5a9a;">Downloader</span></div>
-                    <div style="font-size: ${px(9)}; color: #8a9aaa; text-transform: uppercase;">v44.0 FULL • autostart + retry ×5</div>
+        <div id="litres_downloader_ui">
+            <div class="ldl-header">
+                <div class="ldl-logo">📚</div>
+                <div style="flex:1;min-width:0;">
+                    <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
+                    <div class="ldl-subtitle">v45.0 · autostart · retry ×5</div>
                 </div>
-                <button id="btn_sound" style="background: rgba(26,42,74,0.05); color: #1a5a9a; border: none; cursor: pointer; font-size: ${px(13)}; padding: ${px(4)} ${px(8)}; border-radius: ${px(6)}; font-weight: 700;" title="Звук">🔊</button>
-                <button id="btn_github" style="background: #24292e; color: #fff; border: none; cursor: pointer; font-size: ${px(12)}; padding: ${px(4)} ${px(8)}; border-radius: ${px(6)}; font-weight: 700;" title="GitHub токен">🔑</button>
-                <button id="btn_minimize" style="background: rgba(26,42,74,0.05); border: none; color: #8a9aaa; cursor: pointer; font-size: ${px(14)}; padding: ${px(3)} ${px(7)}; border-radius: ${px(6)};" title="Свернуть">—</button>
-                <button id="close_ui" style="background: rgba(26,42,74,0.05); border: none; color: #8a9aaa; cursor: pointer; font-size: ${px(14)}; padding: ${px(3)} ${px(7)}; border-radius: ${px(6)};" title="Закрыть">✕</button>
+                <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
+                <button id="btn_github" class="ldl-icon-btn" title="GitHub токен">🔑</button>
+                <button id="btn_minimize" class="ldl-icon-btn" title="Свернуть">—</button>
+                <button id="close_ui" class="ldl-icon-btn" title="Закрыть">✕</button>
             </div>
 
-            <div style="background: #f0f7ff; border-radius: ${px(8)}; padding: ${px(8)} ${px(10)}; margin-bottom: ${px(8)}; border-left: ${px(3)} solid #1a5a9a; font-size: ${px(11)}; line-height: 1.4;">
-                <div style="font-weight: 700; margin-bottom: ${px(2)};" id="preview_book_title">${bookInfo.title}</div>
-                <div style="color: #4a6a8a;">✍️ <span id="preview_book_author">${bookInfo.author}</span></div>
-                <div style="color: #4a6a8a; margin-top: ${px(2)};">📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр. • <span id="preview_formats">⏳</span></div>
-            </div>
+            <div class="ldl-body">
+                <div class="ldl-card book-card">
+                    <div class="ldl-card-title" id="preview_book_title">${bookInfo.title}</div>
+                    <div class="ldl-card-row">✍️ <span id="preview_book_author">${bookInfo.author}</span></div>
+                    <div class="ldl-card-row">📄 <span id="preview_total_pages">${bookInfo.pages || '—'}</span> стр. • <span id="preview_formats">⏳</span></div>
+                </div>
 
-            <div id="user_info_block" style="background: #f8faff; border-radius: ${px(8)}; padding: ${px(8)} ${px(10)}; margin-bottom: ${px(8)}; border: 1px solid #e8eef4; font-size: ${px(10)}; color: #4a6a8a; line-height: 1.5;">
-                <div style="font-weight: 700; font-size: ${px(11)}; color: #1a2a4a; margin-bottom: ${px(4)};">👤 Аккаунт</div>
-                <div id="user_info_text">⏳ Загрузка...</div>
-            </div>
+                <div class="ldl-card" id="user_info_block">
+                    <div class="ldl-card-label">👤 Аккаунт</div>
+                    <div id="user_info_text">⏳ Загрузка...</div>
+                </div>
 
-            <div style="background: #f0f4fa; border-radius: ${px(8)}; padding: ${px(8)} ${px(10)}; margin-bottom: ${px(8)};">
-                <div style="display: flex; align-items: center; gap: ${px(8)}; margin-bottom: ${px(6)};">
-                    <div id="hand_animation" style="font-size: ${px(20)}; width: ${px(28)}; text-align: center; transition: transform 0.8s cubic-bezier(0.34,1.56,0.64,1);">🖐️</div>
-                    <div style="flex: 1; min-width: 0;">
-                        <div id="reading_status" style="font-weight: 600; font-size: ${px(11)}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📖 Готов</div>
-                        <div id="reading_phase" style="font-size: ${px(10)}; color: #6a8aaa;">Фаза: idle</div>
+                <div class="ldl-progress-box">
+                    <div class="ldl-status-row">
+                        <div class="ldl-hand" id="hand_animation">🖐️</div>
+                        <div class="ldl-status-text">
+                            <div class="ldl-status-main" id="reading_status">📖 Готов к старту</div>
+                            <div class="ldl-status-phase" id="reading_phase">Фаза: idle</div>
+                        </div>
+                        <div class="ldl-counter" id="page_counter">0/0</div>
                     </div>
-                    <div id="page_counter" style="font-size: ${px(14)}; font-weight: 700; color: #1a5a9a;">0/0</div>
+                    <div class="ldl-bar"><div class="ldl-bar-fill" id="progress_bar"></div></div>
+                    <div class="ldl-progress-info">
+                        <span id="progress_text">📥 0 из 0</span>
+                        <span class="pct" id="percent_text">0%</span>
+                    </div>
+                    <div class="ldl-log" id="litres_log">⏳ Загрузка...</div>
                 </div>
-                <div style="width: 100%; height: ${px(6)}; background: #e8eef4; border-radius: ${px(3)}; overflow: hidden; margin-bottom: ${px(6)};">
-                    <div id="progress_bar" style="width: 0%; height: 100%; background: linear-gradient(90deg,#1a5a9a,#4a8af4); border-radius: ${px(3)}; transition: width 0.4s;"></div>
+
+                <div class="ldl-result" id="result_banner">
+                    <div class="ldl-result-title">✅ Файл скачан!</div>
+                    <div id="result_text"></div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: ${px(10)}; color: #6a8aaa; margin-bottom: ${px(4)};">
-                    <span id="progress_text">📥 0 из 0</span>
-                    <span id="percent_text" style="font-weight: 700; color: #1a5a9a;">0%</span>
-                </div>
-                <div id="litres_log" style="font-size: ${px(10)}; color: #6a8aaa; background: #e8eef4; padding: ${px(4)} ${px(6)}; border-radius: ${px(4)}; max-height: ${px(70)}; overflow-y: auto; font-family: 'Courier New', monospace; line-height: 1.35;">⏳ Загрузка...</div>
             </div>
 
-            <div id="result_banner" style="display: none; padding: ${px(10)} ${px(12)}; background: linear-gradient(135deg, #e8f8ee, #f0faf4); border: 2px solid #27ae60; border-radius: ${px(10)}; margin-bottom: ${px(8)};">
-                <div style="font-weight: 800; font-size: ${px(13)}; color: #1e8449; margin-bottom: ${px(4)};">✅ Файл скачан!</div>
-                <div id="result_text" style="font-size: ${px(11)}; color: #2c3e50; line-height: 1.5;"></div>
+            <div class="ldl-buttons">
+                <button id="btn_start" class="ldl-btn ldl-btn-main">▶ Старт</button>
+                <button id="btn_pause" class="ldl-btn ldl-btn-pause" disabled>⏸</button>
+                <button id="btn_stop" class="ldl-btn ldl-btn-stop" disabled>⏹</button>
             </div>
 
-            <div style="display: flex; gap: ${px(4)}; margin-bottom: ${px(6)};">
-                <button id="btn_start" style="flex: 3; padding: ${px(12)} ${px(6)}; background: #27ae60; color: #fff; border: none; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(13)}; transition: all .2s;">▶ Старт</button>
-                <button id="btn_pause" style="flex: 1; padding: ${px(12)} ${px(6)}; background: #e8eef4; color: #6a8aaa; border: none; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(11)};">⏸</button>
-                <button id="btn_stop" style="flex: 1; padding: ${px(12)} ${px(6)}; background: #f0f2f4; color: #8a9aaa; border: 1px solid #dce2e8; border-radius: ${px(6)}; cursor: pointer; font-weight: 700; font-size: ${px(11)};">⏹</button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: ${px(8)}; padding: ${px(5)} ${px(8)}; background: #f8faff; border-radius: ${px(6)}; border: 1px solid #e8eef4; margin-bottom: ${px(6)}; font-size: ${px(11)}; flex-wrap: wrap;">
-                <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;">
-                    <input type="checkbox" id="force_mode" style="width: ${px(14)}; height: ${px(14)}; accent-color: #e74c3c; cursor: pointer;">
+            <div class="ldl-toggles">
+                <label class="ldl-toggle force">
+                    <input type="checkbox" id="force_mode">
                     ⚡ FORCE
                 </label>
-                <label style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Автоматически нажать Старт при загрузке страницы">
-                    <input type="checkbox" id="autostart_mode" style="width: ${px(14)}; height: ${px(14)}; accent-color: #27ae60; cursor: pointer;">
+                <label class="ldl-toggle auto" title="Автоматически нажать Старт при загрузке страницы">
+                    <input type="checkbox" id="autostart_mode">
                     🚀 АВТО
                 </label>
-                <label id="tools_label" style="display: flex; align-items: center; gap: ${px(6)}; cursor: pointer; font-weight: 600;" title="Добавить x64.rar в ZIP">
-                    <input type="checkbox" id="add_tools" ${addToolsDefault ? 'checked' : ''} style="width: ${px(14)}; height: ${px(14)}; accent-color: #27ae60; cursor: pointer;">
+                <label class="ldl-toggle tools" id="tools_label" title="Добавить x64.rar в ZIP">
+                    <input type="checkbox" id="add_tools" ${addToolsDefault ? 'checked' : ''}>
                     📦 Tools
                 </label>
-                <div id="force_status" style="margin-left: auto; font-size: ${px(10)}; color: #8a9aaa; background: #e8eef4; padding: ${px(1)} ${px(6)}; border-radius: ${px(8)};">⏸ выкл</div>
+                <div class="ldl-force-status" id="force_status">⏸ выкл</div>
             </div>
 
-            <div id="status_text" style="font-size: ${px(10)}; color: #6a8aaa; text-align: center; padding: ${px(4)} 0 ${px(2)}; border-top: 1px solid #e8eef4; min-height: ${px(16)};">⏳ Загрузка...</div>
-            <div id="zip_info" style="font-size: ${px(10)}; color: #8aaaac; text-align: center; margin-top: ${px(2)}; display: none;">📦 ...</div>
+            <div class="ldl-footer">
+                <span id="ldl-status-line">⏳ Загрузка...</span>
+                <span id="ldl-zip-info">📦 ...</span>
+            </div>
         </div>
     `);
 
@@ -761,7 +1013,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     // ═══════════════════════════════════════════════════════════
     // 🎨 ЦВЕТНЫЕ ЛОГИ
     // ═══════════════════════════════════════════════════════════
-    const LOG_COLORS = { info:'#6a8aaa', ok:'#27ae60', err:'#e74c3c', warn:'#f0a500', step:'#1a5a9a', net:'#7c5cff', db:'#38bdf8' };
+    const LOG_COLORS = { info:'rgba(255,255,255,.55)', ok:'#2ecc71', err:'#e74c3c', warn:'#f0a500', step:'#4a8af4', net:'#7c5cff', db:'#38bdf8' };
 
     function updateTabTitle() {
         try {
@@ -786,7 +1038,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
             miniStatus.textContent = '❌ ошибка'; miniBadge.style.display = 'none';
         } else if (state.isRunning) {
             miniStatus.textContent = `${state.downloaded}/${state.total} · ${state.currentPhaseText}`;
-            if (state.total > 0) { miniBadge.style.display = 'block'; miniBadge.textContent = `${Math.round(state.downloaded/state.total*100)}%`; miniBadge.style.background = '#1a5a9a'; }
+            if (state.total > 0) { miniBadge.style.display = 'block'; miniBadge.textContent = `${Math.round(state.downloaded/state.total*100)}%`; miniBadge.style.background = '#4a8af4'; }
         } else {
             miniStatus.textContent = 'готов'; miniBadge.style.display = 'none';
         }
@@ -815,8 +1067,9 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     const logDb = t => addLog(t, 'db');
 
     function setStatus(text, kind = 'info') {
-        $('status_text').textContent = text;
-        $('status_text').style.color = LOG_COLORS[kind] || LOG_COLORS.info;
+        const el = $('ldl-status-line');
+        el.textContent = text;
+        el.style.color = kind === 'err' ? '#e74c3c' : kind === 'ok' ? '#2ecc71' : 'rgba(255,255,255,.4)';
         addLog(text, kind === 'err' ? 'err' : kind === 'ok' ? 'ok' : 'info');
     }
     function setReadingStatus(t) { $('reading_status').textContent = t; }
@@ -825,26 +1078,22 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         const el = $('preview_formats');
         if (!el) return;
         if (bookInfo.format) {
-            el.innerHTML = `${bookInfo.format.icon} <b>${bookInfo.format.name}</b>`;
-            el.style.color = '#1a5a9a';
+            el.innerHTML = `${bookInfo.format.icon} <b style="color:#4a8af4;">${bookInfo.format.name}</b>`;
             const isPage = state.pageFormats && state.pageFormats.length > 0;
             const isReady = ['FB2','EPUB','PDF','MOBI','TXT','ZIP'].includes(bookInfo.format.name);
             if (isReady && !isPage) {
                 $('tools_label').style.display = 'none';
             } else {
-                $('tools_label').style.display = 'flex';
+                $('tools_label').style.display = 'inline-flex';
             }
         } else if (state.pageFormats && state.pageFormats.length > 0) {
-            el.innerHTML = `📕 <b>PDF</b> (${state.pageFormats.length} стр.)`;
-            el.style.color = '#1a5a9a';
-            $('tools_label').style.display = 'flex';
+            el.innerHTML = `📕 <b style="color:#4a8af4;">PDF</b> (${state.pageFormats.length} стр.)`;
+            $('tools_label').style.display = 'inline-flex';
         } else {
             el.innerHTML = '⏳';
-            el.style.color = '#8a9aaa';
         }
     }
 
-    // 🎬 РУКА-АНИМАЦИЯ
     function animateHand(a) {
         const h = $('hand_animation');
         if (!h) return;
@@ -888,21 +1137,32 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         const bS = $('btn_start'), bP = $('btn_pause'), bT = $('btn_stop');
         const repeat = state.phase === 'done' || state.phase === 'error';
         if (repeat) {
-            bS.disabled = false; bS.textContent = '🔁 Повторить'; bS.style.background = '#1a5a9a'; bS.style.color = '#fff';
-            bP.disabled = true; bP.style.background = '#e8eef4'; bP.style.color = '#8a9aaa';
-            bT.disabled = true; bT.style.background = '#f0f2f4'; bT.style.color = '#b0c0d0';
+            bS.disabled = false;
+            bS.textContent = '🔁 Повторить';
+            bS.classList.add('repeat');
+            bP.disabled = true;
+            bT.disabled = true;
         } else if (state.isRunning && !state.isPaused) {
-            bS.disabled = true; bS.textContent = '⏳ Идёт...'; bS.style.background = '#b0d4b8';
-            bP.disabled = false; bP.style.background = '#f0a500'; bP.style.color = '#fff';
-            bT.disabled = false; bT.style.background = '#fce4e4'; bT.style.color = '#e74c3c';
+            bS.disabled = true;
+            bS.textContent = '⏳ Идёт...';
+            bS.classList.remove('repeat');
+            bP.disabled = false;
+            bP.classList.remove('active');
+            bT.disabled = false;
         } else if (state.isRunning && state.isPaused) {
-            bS.disabled = false; bS.textContent = '▶ Продолжить'; bS.style.background = '#1a3a6a'; bS.style.color = '#fff';
-            bP.disabled = true; bP.style.background = '#e8eef4'; bP.style.color = '#8a9aaa';
-            bT.disabled = false; bT.style.background = '#fce4e4'; bT.style.color = '#e74c3c';
+            bS.disabled = false;
+            bS.textContent = '▶ Продолжить';
+            bS.classList.remove('repeat');
+            bP.disabled = true;
+            bP.classList.add('active');
+            bT.disabled = false;
         } else {
-            bS.disabled = false; bS.textContent = '▶ Старт'; bS.style.background = '#27ae60'; bS.style.color = '#fff';
-            bP.disabled = true; bP.style.background = '#e8eef4'; bP.style.color = '#8a9aaa';
-            bT.disabled = true; bT.style.background = '#f0f2f4'; bT.style.color = '#b0c0d0';
+            bS.disabled = false;
+            bS.textContent = '▶ Старт';
+            bS.classList.remove('repeat');
+            bP.disabled = true;
+            bP.classList.remove('active');
+            bT.disabled = true;
         }
     }
     function showResult(format, filename, size) {
@@ -911,10 +1171,10 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         state.resultSize = size;
         const sz = size > 1048576 ? (size/1048576).toFixed(2)+' MB' : (size/1024).toFixed(0)+' KB';
         $('result_text').innerHTML = `
-            <div>📁 <b>${filename}</b></div>
-            <div>📄 Формат: <b style="color:#1a5a9a;">${format}</b></div>
-            <div>📦 Размер: <b>${sz}</b></div>
-            <div style="margin-top:${px(4)};font-size:${px(10)};color:#6a8aaa;">Файл в папке «Загрузки»</div>
+            <div class="ldl-result-line">📁 <b>${filename}</b></div>
+            <div class="ldl-result-line">📄 Формат: <span class="fmt"><b>${format}</b></span></div>
+            <div class="ldl-result-line">📦 Размер: <b>${sz}</b></div>
+            <div style="margin-top:6px;font-size:10px;color:rgba(255,255,255,.5);">Файл в папке «Загрузки»</div>
         `;
         $('result_banner').style.display = 'block';
         setPhase('done', 'готово');
@@ -1013,11 +1273,11 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         setPhase('running', 'сборка ZIP');
         setStatus('📦 Формируем ZIP...');
         animateHand('📦');
-        $('zip_info').style.display = 'block';
+        $('ldl-zip-info').style.display = 'inline';
         Sound.zip();
 
         if (state.addTools) {
-            addLog('📥 Скачиваем x64.rar...');
+            addLog('Скачиваем x64.rar...', 'net');
             const t = await downloadTools();
             if (t) { state.zip.file(TOOLS_PATH, t); logDb(`Tools: ${(t.size/1048576).toFixed(2)} MB`); }
             state.zip.file('tools/README.txt', `LitRes PDF Converter\n1. Распакуй tools/x64.rar\n2. run_auto.bat\n3. ZIP в IN\n4. PDF в OUT\n© 2026 Diminssoft`);
@@ -1030,15 +1290,15 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
             `Страниц: ${state.downloaded}/${state.total}\n` +
             `Формат: JPG/GIF постранично\n` +
             `Дата: ${new Date().toLocaleString('ru-RU')}\n` +
-            `Скачано через LitRes Downloader v44.0`);
+            `Скачано через LitRes Downloader v45.0`);
 
         try {
             const zipBlob = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
             const fileName = `${safe}(${state.startPage}-${state.endPage}).zip`;
             triggerDownload(zipBlob, fileName);
-            $('zip_info').textContent = `✅ ZIP: ${Math.round(zipBlob.size/1048576)} MB`;
-            $('zip_info').style.color = '#1a5a9a';
+            $('ldl-zip-info').textContent = `✅ ZIP: ${Math.round(zipBlob.size/1048576)} MB`;
+            $('ldl-zip-info').style.color = '#4a8af4';
             const extUsed = state.pageFormats && state.pageFormats[0] ? state.pageFormats[0].toUpperCase() : 'JPG';
             showResult(`JPG/GIF (${extUsed})`, fileName, zipBlob.size);
             await saveProgress(true);
@@ -1146,7 +1406,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         setPhase('running', 'сборка HTML');
         setStatus('📦 HTML → ZIP...');
         Sound.zip();
-        $('zip_info').style.display = 'block';
+        $('ldl-zip-info').style.display = 'inline';
         if (state.skippedChapters.length > 0) logWarn(`Пропущено: ${state.skippedChapters.length}`);
 
         const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor });
@@ -1157,14 +1417,14 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         state.zip.file('book_info.txt',
             `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\n` +
             `Глав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\n` +
-            `Формат: HTML (из JSON LitRes)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v44.0`);
+            `Формат: HTML (из JSON LitRes)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v45.0`);
 
         try {
             const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const zn = `${safe}.zip`;
             triggerDownload(zb, zn);
-            $('zip_info').textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
-            $('zip_info').style.color = '#1a5a9a';
+            $('ldl-zip-info').textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
+            $('ldl-zip-info').style.color = '#4a8af4';
             showResult(`HTML (JSON, ${state.jsonChapters.length} глав)`, zn, zb.size);
             await saveProgress(true);
         } catch(e) {
@@ -1184,14 +1444,14 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         zip.file(`${safe}.pdf`, pdfBlob);
         zip.file('book_info.txt',
             `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\n` +
-            `Формат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v44.0`);
+            `Формат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v45.0`);
         try {
             const zb = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const zn = `${safe}.zip`;
             triggerDownload(zb, zn);
-            $('zip_info').style.display = 'block';
-            $('zip_info').textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
-            $('zip_info').style.color = '#1a5a9a';
+            $('ldl-zip-info').style.display = 'inline';
+            $('ldl-zip-info').textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
+            $('ldl-zip-info').style.color = '#4a8af4';
             showResult('PDF (в ZIP)', zn, zb.size);
         } catch(e) {
             setStatus('❌ ' + e.message, 'err');
@@ -1313,7 +1573,6 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
                 return;
             }
 
-            // 🆘 Fallback
             if (detected.type === 'timeout' || detected.type === 'fetch-error' || detected.type === 'error') {
                 logWarn(`000.js не ответил (${detected.type}) → постранично JPG`);
                 Sound.warn();
@@ -1384,8 +1643,8 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     $('force_mode').addEventListener('change', function() {
         state.forceMode = this.checked;
         $('force_status').textContent = this.checked ? '⚡ вкл' : '⏸ выкл';
-        $('force_status').style.background = this.checked ? '#fce4e4' : '#e8eef4';
-        $('force_status').style.color = this.checked ? '#e74c3c' : '#8a9aaa';
+        if (this.checked) $('force_status').classList.add('on');
+        else $('force_status').classList.remove('on');
         Sound.click();
     });
     try { $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY) === 'true'; } catch(e) {}
@@ -1401,7 +1660,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
     });
 
     window.downloaderUI = {
-        version: 'v44.0-full',
+        version: 'v45.0',
         start: startSmart,
         pause: pauseDownload,
         stop: stopDownload,
@@ -1451,22 +1710,22 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
                 let h = `<div>👤 <b>${u.id}</b>`;
                 if (u.login) h += ` • ${u.login}`;
                 h += `</div>`;
-                if (u.email) h += `<div style="font-size: ${px(9)};">📧 ${u.email} ${u.isEmailConfirmed ? '✅' : '⚠️'}</div>`;
+                if (u.email) h += `<div style="font-size:10px;">📧 ${u.email} ${u.isEmailConfirmed ? '✅' : '⚠️'}</div>`;
                 if (u.subscription) {
                     const till = new Date(u.subscription.validTill);
                     const dl = Math.ceil((till - new Date()) / 86400000);
-                    const dc = dl < 3 ? '#e74c3c' : (dl < 7 ? '#f0a500' : '#27ae60');
-                    h += `<div style="margin-top: ${px(6)}; padding-top: ${px(6)}; border-top: 1px dashed #d4e2f0;">`;
+                    const dc = dl < 3 ? '#e74c3c' : (dl < 7 ? '#f0a500' : '#2ecc71');
+                    h += `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed rgba(255,255,255,.1);">`;
                     h += `<div><b>${u.subscription.isTrial ? '🎁 Trial' : '⭐ Активна'}</b>`;
                     if (u.subscription.planName) h += ` · ${u.subscription.planName}`;
                     if (u.subscription.autoRenew) h += ` 🔄`;
                     h += `</div>`;
-                    h += `<div style="font-size: ${px(9)};">📅 ${till.toLocaleDateString('ru-RU')} • <span style="color: ${dc}; font-weight: 700;">${dl} дн.</span></div>`;
-                    if (u.subscription.price) h += `<div style="font-size: ${px(9)};">💳 ${u.subscription.price} ₽/мес</div>`;
+                    h += `<div style="font-size:10px;">📅 ${till.toLocaleDateString('ru-RU')} • <span style="color:${dc};font-weight:700;">${dl} дн.</span></div>`;
+                    if (u.subscription.price) h += `<div style="font-size:10px;">💳 ${u.subscription.price} ₽/мес</div>`;
                     h += `</div>`;
                 }
-                if (u.account) h += `<div style="margin-top: ${px(4)}; font-size: ${px(9)};">💰 Баланс: <b>${u.account.display}</b> (реал ${u.account.real} + бонус ${u.account.bonus})</div>`;
-                if (u.loyalty) h += `<div style="font-size: ${px(9)};">🎁 Кешбэк: <b>${u.loyalty.cashbackPercent}%</b>${u.loyalty.purchaseForNext > 0 ? ` · до след. ур.: ${u.loyalty.purchaseForNext} ₽` : ''}</div>`;
+                if (u.account) h += `<div style="margin-top:4px; font-size:10px;">💰 Баланс: <b>${u.account.display}</b> (реал ${u.account.real} + бонус ${u.account.bonus})</div>`;
+                if (u.loyalty) h += `<div style="font-size:10px;">🎁 Кешбэк: <b>${u.loyalty.cashbackPercent}%</b>${u.loyalty.purchaseForNext > 0 ? ` · до след. ур.: ${u.loyalty.purchaseForNext} ₽` : ''}</div>`;
                 $('user_info_text').innerHTML = h;
             } else {
                 $('user_info_text').innerHTML = '<div>⚠️ Нет данных</div>';
@@ -1496,7 +1755,7 @@ ${chapters.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}
         }, 3000);
 
         updateButtons();
-        console.log('%c✅ LitRes Downloader v44.0 FULL загружен!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        console.log('%c✅ LitRes Downloader v45.0 загружен!', 'color:#4a8af4;font-weight:bold;font-size:14px;');
     }
 
     // ═══════════════════════════════════════════════════════════
