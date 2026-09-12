@@ -1,14 +1,14 @@
 /**
- * LitRes Downloader v48.0 — LIVE PROGRESS
- * 📊 Прогресс blob-загрузки (проценты/MB/скорость/ETA) как в Suno
+ * LitRes Downloader v48.1 — FIXED
+ * 🛡️ ФИКС: проверка magic bytes PK в downloadWithProgress (как в v47)
+ * 📊 Прогресс blob-загрузки (проценты/MB/скорость/ETA)
  * 🔥 Multi-strategy параллельно · 🎯 Одна кнопка · 🔒 UI до готовности
- * 🛡️ ZIP magic + фильтр toc.js · 000.js 3 ретрая (HTTP/2)
  * 🎨 Тёмный UI · 🗕 Minimize · ✅ Баннер · 🚀 АВТО · 🔊 · 📦 Tools
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV48() {
-    console.log('%c🚀 LitRes Downloader v48.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+(function fullDownloaderV481() {
+    console.log('%c🚀 LitRes Downloader v48.1', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -17,7 +17,8 @@
             ['litres-downloader.js','litres-downloader-v29.js','litres-downloader-v30.js','litres-downloader-v31.js',
              'litres-downloader-v32.js','litres-downloader-v33.js','litres-downloader-v34.js','litres-downloader-v35.js',
              'litres-downloader-v36.js','litres-downloader-v37.js','litres-downloader-v38.js','litres-downloader-v40.js',
-             'litres-downloader-v40.7.js','litres-downloader-v42.js','litres-downloader-v43.js','litres-downloader-v44.js','litres-downloader-v45.js','litres-downloader-v46.js','litres-downloader-v47.js'
+             'litres-downloader-v40.7.js','litres-downloader-v42.js','litres-downloader-v43.js','litres-downloader-v44.js',
+             'litres-downloader-v45.js','litres-downloader-v46.js','litres-downloader-v47.js','litres-downloader-v48.js'
             ].forEach(function(f) {
                 fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' })
                     .then(function(){ console.log('✅ Purge:', f.split('/').pop()); })
@@ -191,9 +192,9 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 📊 DOWNLOAD WITH LIVE PROGRESS — как в Suno!
+    // 📊 DOWNLOAD WITH PROGRESS + 🛡️ MAGIC BYTES CHECK (ФИКС!)
     // ═══════════════════════════════════════════════════════════
-    async function downloadWithProgress(url, opts = {}, label = 'файла') {
+    async function downloadWithProgress(url, opts = {}, label = 'файла', expectZip = false) {
         const ctrl = new AbortController();
         const hardTimeout = setTimeout(() => ctrl.abort(), 300000);
         const t0 = performance.now();
@@ -202,14 +203,15 @@
             if (!r.ok) { clearTimeout(hardTimeout); return null; }
             const total = parseInt(r.headers.get('content-length') || '0', 10);
             if (!r.body || !r.body.getReader) {
-                // Fallback — простой blob
                 const blob = await r.blob();
                 clearTimeout(hardTimeout);
+                // 🛡️ Проверка magic bytes даже в fallback
+                if (expectZip && !(await checkMagicBytes(blob, label))) return null;
                 return blob;
             }
             const reader = r.body.getReader();
             const chunks = [];
-            let loaded = 0, lastTick = 0, lastPct = 0, lastUpdate = 0;
+            let loaded = 0, lastUpdate = 0, lastPct = 0;
             const speedSamples = [];
 
             while (true) {
@@ -227,9 +229,7 @@
                     const sp = speedSamples.reduce((a,b)=>a+b,0)/speedSamples.length;
                     const pct = total > 0 ? (loaded/total*100) : 0;
                     const eta = (total > 0 && sp > 0.01) ? ((total-loaded)/1048576/sp) : 0;
-                    // 🎯 Обновляем UI прогресса
                     updateBlobProgress(loaded, total, sp, pct, eta, label);
-                    // 📝 Логи каждые 10%
                     if (total > 0 && pct - lastPct >= 10) {
                         lastPct = Math.floor(pct/10)*10;
                         addLog(`⬇ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(sp)} · ETA ${fmtEta(eta)}`, 'net');
@@ -239,6 +239,10 @@
             clearTimeout(hardTimeout);
             const blob = new Blob(chunks);
             const sec = (performance.now() - t0) / 1000;
+
+            // 🛡️ ГЛАВНЫЙ ФИКС: проверка magic bytes для ZIP
+            if (expectZip && !(await checkMagicBytes(blob, label))) return null;
+
             addLog(`✅ ${label}: ${fmtBytes(blob.size)} за ${sec.toFixed(1)}s (${fmtSpeed(blob.size/1048576/sec)})`, 'ok');
             return blob;
         } catch(e) {
@@ -248,11 +252,27 @@
         }
     }
 
+    // 🛡️ Проверка magic bytes
+    async function checkMagicBytes(blob, label = 'файла') {
+        if (blob.size < 4) { console.log('⚠️ ' + label + ': слишком мал'); return false; }
+        const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+        const headHex = Array.from(head).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        const headStr = String.fromCharCode(...head);
+        console.log(`🔍 ${label} head: ${headHex} | "${headStr}"`);
+        const isZip = head[0] === 0x50 && head[1] === 0x4B;
+        if (!isZip) {
+            console.log(`⚠️ ${label}: НЕ ZIP (ожидалось PK) — первые байты "${headStr}"`);
+            addLog(`⚠️ ${label}: не ZIP (первые байты: ${headStr})`, 'warn');
+            return false;
+        }
+        console.log(`✅ ${label}: ZIP валиден`);
+        return true;
+    }
+
     function fmtBytes(b) { if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(2) + ' MB'; }
     function fmtSpeed(mbps) { if (mbps < 0.01) return '—'; if (mbps < 1) return (mbps*1024).toFixed(0) + ' KB/s'; return mbps.toFixed(2) + ' MB/s'; }
     function fmtEta(sec) { if (!isFinite(sec) || sec <= 0) return '—'; if (sec < 60) return sec.toFixed(0) + 's'; const m = Math.floor(sec/60), s = Math.round(sec%60); return m + 'm ' + s + 's'; }
 
-    // 🎯 Обновление UI прогресса
     function updateBlobProgress(loaded, total, speed, pct, eta, label) {
         const p = total > 0 ? pct : 0;
         progressBar.style.width = `${Math.min(p, 100)}%`;
@@ -285,7 +305,7 @@
                 if (link.includes('.bin') || link.includes('application/zip') || link.includes('download_book') || link.includes('fname=')) {
                     const fmt = detectFormatFromName(link);
                     if (fmt && (!bookInfo.format || bookInfo.format.name !== fmt.name)) { bookInfo.format = fmt; updateFormatDisplay(); }
-                    console.log('🥇 ZIP link found');
+                    console.log('🥇 ZIP link:', link.substring(0, 120));
                     return { ok: true, link };
                 }
             } catch(e) {}
@@ -355,7 +375,7 @@
     }
     function buildBookHtml(ch, m) {
         const st = escHtml(m.title || 'Книга'), sa = escHtml(m.author || 'Неизвестный автор');
-        return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title><style>*{box-sizing:border-box;}body{font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}h2:first-of-type{page-break-before:auto;}h3{font-size:20px;margin:30px 0 15px;color:#2a4a6a;}p{margin:14px 0;text-align:justify;}em{font-style:italic;}strong{font-weight:bold;}.meta{color:#6a8aaa;font-size:14px;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #ddd;}.footer{margin-top:80px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#aab8c4;text-align:center;}</style></head><body><h1 class="book-title">${st}</h1><div class="meta">✍️ ${sa}</div>${ch.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}<div class="footer">📚 LitRes Downloader v48.0<br>Глав: ${ch.length}</div></body></html>`;
+        return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title><style>*{box-sizing:border-box;}body{font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}h2:first-of-type{page-break-before:auto;}h3{font-size:20px;margin:30px 0 15px;color:#2a4a6a;}p{margin:14px 0;text-align:justify;}em{font-style:italic;}strong{font-weight:bold;}.meta{color:#6a8aaa;font-size:14px;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #ddd;}.footer{margin-top:80px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#aab8c4;text-align:center;}</style></head><body><h1 class="book-title">${st}</h1><div class="meta">✍️ ${sa}</div>${ch.map((h, i) => `<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}<div class="footer">📚 LitRes Downloader v48.1<br>Глав: ${ch.length}</div></body></html>`;
     }
 
     let toolsBlob = null;
@@ -451,7 +471,7 @@
                 <div class="ldl-logo">📚</div>
                 <div style="flex:1;min-width:0;">
                     <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v48.0 · live progress</div>
+                    <div class="ldl-subtitle">v48.1 · live progress + PK-check</div>
                 </div>
                 <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
                 <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
@@ -686,7 +706,7 @@
         const t = await downloadTools();
         if (t) { state.zip.file(TOOLS_PATH, t); addLog(`✅ Tools: ${(t.size/1048576).toFixed(2)} MB`, 'db'); }
         state.zip.file('tools/README.txt', `LitRes PDF Converter\n1. Распакуй tools/x64.rar\n2. run_auto.bat\n3. ZIP в IN\n4. PDF в OUT\n© 2026 Diminssoft`);
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nФормат: JPG/GIF постранично\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nФормат: JPG/GIF постранично\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.1`);
         try {
             const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
@@ -753,7 +773,7 @@
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
         if (!state.zip) state.zip = new JSZip();
         state.zip.file(`${safe}.html`, html);
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nГлав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\nФормат: HTML (из JSON)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nГлав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\nФормат: HTML (из JSON)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.1`);
         try {
             const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const zn = `${safe}.zip`;
@@ -771,7 +791,7 @@
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
         const zip = new JSZip();
         zip.file(`${safe}.pdf`, pdfBlob);
-        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nФормат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.0`);
+        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nФормат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v48.1`);
         try {
             const zb = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
             const zn = `${safe}.zip`;
@@ -828,12 +848,12 @@
             console.log('🎯 Results:', { zip: zipRes.ok, pdf000: pdf000Res.ok, pdfjs: jsRes.ok });
             logStep(`ZIP=${zipRes.ok ? '✅' : '❌'} · 000.js=${pdf000Res.ok ? '✅' : '❌'} · PDFjs=${jsRes.ok ? '✅' : '❌'}`);
 
-            // 🥇 ZIP
+            // 🥇 ZIP — с проверкой magic bytes!
             if (zipRes.ok) {
                 logStep('🥇 ZIP — скачиваем как есть');
                 state.isRunning = true; updateButtons();
-                const blob = await downloadWithProgress(zipRes.link, { credentials: 'omit', mode: 'cors' }, 'ZIP');
-                if (blob && blob.size > 1024) {
+                const blob = await downloadWithProgress(zipRes.link, { credentials: 'omit', mode: 'cors' }, 'ZIP', true);
+                if (blob && blob.size > 10 * 1024) {
                     const m = zipRes.link.match(/fname=([^&]+)/);
                     const fn = m ? decodeURIComponent(m[1]) : `${state.bookTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100)}.zip`;
                     triggerDownload(blob, fn);
@@ -843,7 +863,7 @@
                     showResult(fmtLabel, fn, blob.size);
                     state.isRunning = false; updateButtons(); return;
                 }
-                logWarn('ZIP не скачался — идём дальше');
+                logWarn('ZIP проверку не прошёл → идём дальше');
             }
 
             // 🥈 000.js PDF
@@ -851,7 +871,6 @@
                 logStep('🥈 PDF blob — упаковываем в ZIP');
                 bookInfo.format = { icon: '📕', name: 'PDF' }; updateFormatDisplay();
                 state.isRunning = true; updateButtons();
-                // 📊 Прогресс уже был при чтении blob — показываем 100%
                 progressBar.style.width = '100%'; percentText.textContent = '100%';
                 setReadingStatus('📦 PDF получен, упаковываем...');
                 await finalizePdfToZip(pdf000Res.blob);
@@ -922,7 +941,7 @@
     try { $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY) === 'true'; } catch(e) {}
     $('autostart_mode').addEventListener('change', function() { try { localStorage.setItem(AUTOSTART_KEY, this.checked ? 'true' : 'false'); } catch(e) {} Sound.click(); addLog(this.checked ? '🚀 Автостарт ВКЛ' : '🚀 Автостарт ВЫКЛ', 'ok'); });
 
-    window.downloaderUI = { version: 'v48.0', start: startSmart, stop: stopDownload, state, Sound, addLog, strategyZip, strategy000js, strategyPdfjs, downloadWithProgress, fetchBookInfo, fetchUserInfo, fetchJsonChapter, buildBookHtml, parseLitFile, litJsonToHtml, saveProgressToGitHub };
+    window.downloaderUI = { version: 'v48.1', start: startSmart, stop: stopDownload, state, Sound, addLog, strategyZip, strategy000js, strategyPdfjs, downloadWithProgress, checkMagicBytes, fetchBookInfo, fetchUserInfo, fetchJsonChapter, buildBookHtml, parseLitFile, litJsonToHtml, saveProgressToGitHub };
 
     async function init() {
         setStatus('⏳ Загрузка...');
@@ -956,6 +975,7 @@
                     h += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.1);"><div><b>${u.subscription.isTrial ? '🎁 Trial' : '⭐ Активна'}</b>${u.subscription.planName ? ' · ' + u.subscription.planName : ''}${u.subscription.autoRenew ? ' 🔄' : ''}</div><div style="font-size:10px;">📅 ${till.toLocaleDateString('ru-RU')} • <span style="color:${dc};font-weight:700;">${dl} дн.</span></div></div>`;
                 }
                 if (u.account) h += `<div style="margin-top:4px;font-size:10px;">💰 Баланс: <b>${u.account.display}</b> (реал ${u.account.real} + бонус ${u.account.bonus})</div>`;
+                if (u.loyalty) h += `<div style="font-size:10px;">🎁 Кешбэк: <b>${u.loyalty.cashbackPercent}%</b></div>`;
                 userInfoText.innerHTML = h;
             } else { userInfoText.innerHTML = '<div>⚠️ Нет данных</div>'; }
         }, 300);
@@ -966,7 +986,7 @@
         animateHand('🖐️');
         updateButtons();
         updateTabTitle();
-        console.log('%c✅ LitRes Downloader v48.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        console.log('%c✅ LitRes Downloader v48.1 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
     }
 
     let currentArtId = artId;
