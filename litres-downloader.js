@@ -1,19 +1,21 @@
 /**
- * LitRes Downloader v54.0 — MULTIMEDIA + PDF + SMART EOF
+ * LitRes Downloader v55.0 — AUTO-RETRY + RESUME
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
  * 📕 PDF постранично: JPG/GIF → ZIP
  * 📕 PDF прямой (pdfjs/*.js + fname=*.pdf) → скачивание ✅ FIX v53
- * 🏁 SMART EOF: 5×404 = конец книги (не долбим 999 глав) ✅ NEW v54
+ * 🏁 SMART EOF: 5×404 = конец книги ✅ NEW v54
+ * 🔄 AUTO-RETRY: 6 попыток + Range-докачка при обрыве ✅ NEW v55
+ * 🛡️ 401/403 без долбёжки · 200 → перезапуск · 90%+ → сборка
  * 🔍 Универсальный детект через magic bytes
  * ⚡ Range-проверка 000.js (2.5с) + fallback с прогрессом
  * 📊 Прогресс-бар · 🚀 Автостарт · 🗕 Minimize · 🔊 Звуки
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV54() {
-    console.log('%c🚀 LitRes Downloader v54.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+(function fullDownloaderV55() {
+    console.log('%c🚀 LitRes Downloader v55.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -24,7 +26,7 @@
      'litres-downloader-v40.7.js','litres-downloader-v42.js','litres-downloader-v43.js','litres-downloader-v44.js',
      'litres-downloader-v45.js','litres-downloader-v46.js','litres-downloader-v47.js','litres-downloader-v48.js',
      'litres-downloader-v49.js','litres-downloader-v50.js','litres-downloader-v51.js','litres-downloader-v52.js',
-     'litres-downloader-v53.js'
+     'litres-downloader-v53.js','litres-downloader-v54.js'
     ].forEach(f => fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' }).catch(()=>{}));
 
     const S = 1.25;
@@ -231,75 +233,139 @@
 
     function isMultimediaType(type){ return ['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'].includes(type); }
 
-    // ═══ 📊 DOWNLOAD WITH PROGRESS ═══
+    // ═══════════════════════════════════════════════════════════
+    // 📊 v55: DOWNLOAD WITH PROGRESS + AUTO-RETRY + RANGE-RESUME
+    // ═══════════════════════════════════════════════════════════
     async function downloadWithProgress(url, opts={}, label='файла', expectedTypes=null){
-        const ctrl = new AbortController();
-        const hardTimeout = setTimeout(()=>ctrl.abort(), 600000);
+        const MAX_ATTEMPTS = 6;              // 6 попыток
+        const RETRY_DELAY = 3000;            // пауза 3с между попытками
+        const chunks = [];                   // ← живут между попытками!
+        let loaded = 0;
+        let total = 0;
+        let attempt = 0;
         const t0 = performance.now();
-        try{
-            const r = await fetch(url, {...opts, signal:ctrl.signal});
-            if(!r.ok){
-                clearTimeout(hardTimeout);
+
+        while(attempt < MAX_ATTEMPTS){
+            attempt++;
+            try{
+                if(attempt > 1){
+                    addLog(`🔄 ${label}: попытка ${attempt}/${MAX_ATTEMPTS} — докачиваем с ${fmtBytes(loaded)}`, 'warn');
+                }
+                // 🔑 Range-докачка, если уже что-то скачали
+                const headers = { ...(opts.headers||{}) };
+                if(loaded > 0) headers['Range'] = `bytes=${loaded}-`;
+
+                const ctrl = new AbortController();
+                const attemptTimeout = setTimeout(()=>ctrl.abort(), 600000); // 10 мин на попытку
+
+                const r = await fetch(url, { ...opts, headers, signal: ctrl.signal });
+
+                // 🚫 401/403 — нет смысла retry
                 if(r.status === 403 || r.status === 401){
+                    clearTimeout(attemptTimeout);
                     console.log(`🚫 ${label}: ${r.status} Forbidden`);
                     addLog(`🚫 ${label}: нет доступа (${r.status})`, 'err');
+                    return null;
                 }
-                return null;
-            }
-            const total = parseInt(r.headers.get('content-length')||'0', 10);
-            if(!r.body || !r.body.getReader){
-                const blob = await r.blob();
-                clearTimeout(hardTimeout);
-                if(expectedTypes){
-                    const info = await detectBlobType(blob);
-                    if(!expectedTypes.includes(info.type)){ console.log(`⚠️ ${label}: тип ${info.type} не подходит`); return null; }
+
+                // 🔄 Разбираемся с ответом Range
+                if(loaded > 0){
+                    if(r.status === 200){
+                        // сервер проигнорировал Range — начинаем сначала
+                        addLog(`⚠️ ${label}: сервер не отдал Range — качаем заново`, 'warn');
+                        chunks.length = 0;
+                        loaded = 0;
+                    } else if(r.status !== 206){
+                        throw new Error(`HTTP ${r.status}`);
+                    }
+                } else if(!r.ok){
+                    throw new Error(`HTTP ${r.status}`);
                 }
-                return blob;
-            }
-            const reader = r.body.getReader();
-            const chunks = [];
-            let loaded=0, lastUpdate=0, lastPct=0;
-            const speedSamples = [];
-            while(true){
-                const { done, value } = await reader.read();
-                if(done) break;
-                chunks.push(value);
-                loaded += value.byteLength;
-                const now = performance.now();
-                if(now - lastUpdate > 200){
-                    lastUpdate = now;
-                    const sec = (now - t0)/1000;
-                    const instSp = sec>0 ? (loaded/1048576/sec) : 0;
-                    speedSamples.push(instSp);
-                    if(speedSamples.length > 5) speedSamples.shift();
-                    const sp = speedSamples.reduce((a,b)=>a+b,0)/speedSamples.length;
-                    const pct = total>0 ? (loaded/total*100) : 0;
-                    const eta = (total>0 && sp>0.01) ? ((total-loaded)/1048576/sp) : 0;
-                    updateBlobProgress(loaded, total, sp, pct, eta, label);
-                    if(total>0 && pct-lastPct >= 10){
-                        lastPct = Math.floor(pct/10)*10;
-                        addLog(`⬇ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(sp)} · ETA ${fmtEta(eta)}`, 'net');
+
+                // 📏 Узнаём полный размер (Content-Range: bytes X-Y/Z)
+                const cr = r.headers.get('content-range');
+                if(cr){
+                    const m = cr.match(/bytes\s+\d+-\d+\/(\d+)/);
+                    if(m) total = parseInt(m[1], 10);
+                } else {
+                    const cl = parseInt(r.headers.get('content-length')||'0', 10);
+                    if(cl > 0) total = loaded + cl;
+                }
+
+                // fallback — если нет reader (старые браузеры)
+                if(!r.body || !r.body.getReader){
+                    const blob = await r.blob();
+                    clearTimeout(attemptTimeout);
+                    chunks.push(blob);
+                    loaded += blob.size;
+                    break;
+                }
+
+                const reader = r.body.getReader();
+                let lastUpdate = performance.now();
+                let lastPct = 0;
+                const speedSamples = [];
+                const startLoaded = loaded;                 // для скорости этой попытки
+                const startTime = performance.now();
+
+                while(true){
+                    const { done, value } = await reader.read();
+                    if(done) break;
+                    chunks.push(value);
+                    loaded += value.byteLength;
+                    const now = performance.now();
+                    if(now - lastUpdate > 200){
+                        lastUpdate = now;
+                        const sec = (now - startTime)/1000;
+                        const instSp = sec>0 ? ((loaded-startLoaded)/1048576/sec) : 0;
+                        speedSamples.push(instSp);
+                        if(speedSamples.length > 5) speedSamples.shift();
+                        const sp = speedSamples.reduce((a,b)=>a+b,0)/speedSamples.length;
+                        const pct = total>0 ? (loaded/total*100) : 0;
+                        const eta = (total>0 && sp>0.01) ? ((total-loaded)/1048576/sp) : 0;
+                        updateBlobProgress(loaded, total, sp, pct, eta, label);
+                        if(total>0 && pct-lastPct >= 10){
+                            lastPct = Math.floor(pct/10)*10;
+                            addLog(`⬇ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(sp)} · ETA ${fmtEta(eta)}`, 'net');
+                        }
                     }
                 }
+                clearTimeout(attemptTimeout);
+
+                // ✅ Проверяем что дошли до конца
+                if(total === 0 || loaded >= total) break;
+                throw new Error(`недокачано: ${fmtBytes(loaded)}/${fmtBytes(total)}`);
+
+            }catch(e){
+                const msg = e.message || String(e);
+                console.log(`⚠️ ${label}: попытка ${attempt}/${MAX_ATTEMPTS} упала: ${msg}`);
+                if(attempt >= MAX_ATTEMPTS){
+                    addLog(`❌ ${label}: ${MAX_ATTEMPTS} попыток — сдался (скачано ${fmtBytes(loaded)})`, 'err');
+                    // 💡 сохраняем что успели — хотя бы частично
+                    if(loaded > 0 && total > 0 && loaded/total > 0.9){
+                        addLog(`💾 ${label}: скачано ${Math.round(loaded/total*100)}% — пробуем собрать`, 'warn');
+                        break; // выйдем из while → соберём blob из chunks
+                    }
+                    return null;
+                }
+                addLog(`⚠️ ${label}: обрыв (${msg}) — повтор ${attempt}/${MAX_ATTEMPTS} через ${RETRY_DELAY/1000}с...`, 'warn');
+                await new Promise(r=>setTimeout(r, RETRY_DELAY));
             }
-            clearTimeout(hardTimeout);
-            const blob = new Blob(chunks);
-            const sec = (performance.now()-t0)/1000;
-            const info = await detectBlobType(blob);
-            console.log(`🔍 ${label}: ${info.icon||''} ${info.name} (${fmtBytes(blob.size)})`, info.hex ? `| head: ${info.hex}` : '');
-            if(expectedTypes && !expectedTypes.includes(info.type)){
-                console.log(`⚠️ ${label}: тип "${info.type}" не в списке`);
-                addLog(`⚠️ ${label}: тип "${info.name}" не подходит`, 'warn');
-                return null;
-            }
-            addLog(`✅ ${label}: ${fmtBytes(blob.size)} за ${sec.toFixed(1)}s (${fmtSpeed(blob.size/1048576/sec)})`, 'ok');
-            blob._detected = info;
-            return blob;
-        }catch(e){
-            clearTimeout(hardTimeout);
-            console.log('⚠️ download failed:', e.message);
+        }
+
+        // ═══ СБОРКА BLOB ═══
+        const blob = new Blob(chunks);
+        const sec = (performance.now()-t0)/1000;
+        const info = await detectBlobType(blob);
+        console.log(`🔍 ${label}: ${info.icon||''} ${info.name} (${fmtBytes(blob.size)})`, info.hex ? `| head: ${info.hex}` : '');
+        if(expectedTypes && !expectedTypes.includes(info.type)){
+            console.log(`⚠️ ${label}: тип "${info.type}" не в списке`);
+            addLog(`⚠️ ${label}: тип "${info.name}" не подходит`, 'warn');
             return null;
         }
+        addLog(`✅ ${label}: ${fmtBytes(blob.size)} за ${sec.toFixed(1)}s (${fmtSpeed(blob.size/1048576/sec)})${attempt>1?` [${attempt} попыток]`:''}`, 'ok');
+        blob._detected = info;
+        return blob;
     }
 
     function fmtBytes(b){ if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(2)+' MB'; }
@@ -451,18 +517,18 @@
         const n=String(num).padStart(3,'0');
         try{
             const r = await fetchWithTimeout(`https://www.litres.ru/download_book_subscr/${state.artId}/${fid}/json/${n}.js`, { credentials:'include' }, 10000);
-            if(r.status === 404) return { status:'notfound' };                                        // ← точный конец книги
-            if(r.status === 401 || r.status === 403) return { status:'forbidden', code:r.status };    // ← доступ пропал
+            if(r.status === 404) return { status:'notfound' };
+            if(r.status === 401 || r.status === 403) return { status:'forbidden', code:r.status };
             if(!r.ok) return { status:'error', code:r.status };
             const t = await r.text();
-            if(!t || t.length < 10) return { status:'empty' };                                       // ← файл есть, но пустой
+            if(!t || t.length < 10) return { status:'empty' };
             return { status:'ok', html:litJsonToHtml(parseLitFile(t)) };
         }catch(e){ return { status:'error' }; }
     }
 
     function buildBookHtml(ch, m){
         const st=escHtml(m.title||'Книга'), sa=escHtml(m.author||'Неизвестный автор');
-        return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title><style>*{box-sizing:border-box;}body{font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}h2:first-of-type{page-break-before:auto;}h3{font-size:20px;margin:30px 0 15px;color:#2a4a6a;}p{margin:14px 0;text-align:justify;}em{font-style:italic;}strong{font-weight:bold;}.meta{color:#6a8aaa;font-size:14px;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #ddd;}.footer{margin-top:80px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#aab8c4;text-align:center;}</style></head><body><h1 class="book-title">${st}</h1><div class="meta">✍️ ${sa}</div>${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}<div class="footer">📚 LitRes Downloader v54.0<br>Глав: ${ch.length}</div></body></html>`;
+        return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title><style>*{box-sizing:border-box;}body{font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}h2:first-of-type{page-break-before:auto;}h3{font-size:20px;margin:30px 0 15px;color:#2a4a6a;}p{margin:14px 0;text-align:justify;}em{font-style:italic;}strong{font-weight:bold;}.meta{color:#6a8aaa;font-size:14px;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #ddd;}.footer{margin-top:80px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#aab8c4;text-align:center;}</style></head><body><h1 class="book-title">${st}</h1><div class="meta">✍️ ${sa}</div>${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}<div class="footer">📚 LitRes Downloader v55.0<br>Глав: ${ch.length}</div></body></html>`;
     }
 
     let toolsBlob = null;
@@ -558,7 +624,7 @@
                 <div class="ldl-logo">📚</div>
                 <div style="flex:1;min-width:0;">
                     <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v54.0 · multimedia + pdf + smart eof</div>
+                    <div class="ldl-subtitle">v55.0 · auto-retry + resume</div>
                 </div>
                 <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
                 <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
@@ -793,7 +859,7 @@
         const t = await downloadTools();
         if(t){ state.zip.file(TOOLS_PATH, t); addLog(`✅ Tools: ${(t.size/1048576).toFixed(2)} MB`, 'db'); }
         state.zip.file('tools/README.txt', `LitRes PDF Converter\n1. Распакуй tools/x64.rar\n2. run_auto.bat\n3. ZIP в IN\n4. PDF в OUT\n© 2026 Diminssoft`);
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nФормат: JPG/GIF постранично\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v54.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nФормат: JPG/GIF постранично\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v55.0`);
         try{
             const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
@@ -906,7 +972,7 @@
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
         if(!state.zip) state.zip = new JSZip();
         state.zip.file(`${safe}.html`, html);
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nГлав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\nФормат: HTML (из JSON)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v54.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nГлав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\nФормат: HTML (из JSON)\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v55.0`);
         try{
             const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const zn = `${safe}.zip`;
@@ -924,7 +990,7 @@
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
         const zip = new JSZip();
         zip.file(`${safe}.pdf`, pdfBlob);
-        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nФормат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v54.0`);
+        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nФормат: PDF\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v55.0`);
         try{
             const zb = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const zn = `${safe}.zip`;
@@ -1140,7 +1206,7 @@
     try{ $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY)==='true'; }catch(e){}
     $('autostart_mode').addEventListener('change', function(){ try{ localStorage.setItem(AUTOSTART_KEY, this.checked?'true':'false'); }catch(e){} Sound.click(); addLog(this.checked?'🚀 Автостарт ВКЛ':'🚀 Автостарт ВЫКЛ', 'ok'); });
 
-    window.downloaderUI = { version:'v54.0', start:startSmart, stop:stopDownload, state, Sound, addLog, strategyZip, strategy000js, strategyPdfjs, downloadWithProgress, detectBlobType, fetchBookInfo, fetchUserInfo, fetchJsonChapter, buildBookHtml, parseLitFile, litJsonToHtml, saveProgressToGitHub };
+    window.downloaderUI = { version:'v55.0', start:startSmart, stop:stopDownload, state, Sound, addLog, strategyZip, strategy000js, strategyPdfjs, downloadWithProgress, detectBlobType, fetchBookInfo, fetchUserInfo, fetchJsonChapter, buildBookHtml, parseLitFile, litJsonToHtml, saveProgressToGitHub };
 
     async function init(){
         setStatus('⏳ Загрузка...');
@@ -1185,7 +1251,7 @@
         animateHand('🖐️');
         updateButtons();
         updateTabTitle();
-        console.log('%c✅ LitRes Downloader v54.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        console.log('%c✅ LitRes Downloader v55.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
     }
 
     let currentArtId = artId;
