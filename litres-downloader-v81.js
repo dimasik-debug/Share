@@ -1,5 +1,5 @@
 /**
- * LitRes Downloader v80.0 — YANDEX.DISK EDITION
+ * LitRes Downloader v80.1 — YANDEX.DISK + LOCAL EDITION
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV (с прогрессом)
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
@@ -7,6 +7,8 @@
  * 📖 JSON главы → HTML + images/ → ZIP
  * 📦 ZIP через 000.js → fetch + ПРОГРЕСС!
  * ☁️ ЯНДЕКС.ДИСК: /Books/YYYY/ + публичные ссылки + прогресс
+ * 💾 ЛОКАЛЬНО: подчекбокс — грузить в «Загрузки» (можно вместе с Диском)
+ * 📍 СБРОС ПОЗИЦИИ окна + smart-привязка к экрану
  * 🖨️ PDF принт — опция
  * 📚 ПОЛНАЯ ДИАГНОСТИКА 6 стратегий
  * 🎯 УМНЫЙ ПОРЯДОК: content.litres.ru → 000.js → <a> fallback
@@ -16,9 +18,9 @@
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV80() {
-    console.log('%c🚀 LitRes Downloader v80.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
-    console.log('%c☁️ Яндекс.Диск Edition', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
+(function fullDownloaderV801() {
+    console.log('%c🚀 LitRes Downloader v80.1', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+    console.log('%c☁️ Яндекс.Диск + 💾 Локально', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -34,7 +36,7 @@
      'litres-downloader-v63.js','litres-downloader-v69.js','litres-downloader-v70.js','litres-downloader-v70.1.js',
      'litres-downloader-v71.js','litres-downloader-v72.js','litres-downloader-v73.js','litres-downloader-v74.js',
      'litres-downloader-v75.js','litres-downloader-v76.js','litres-downloader-v77.js','litres-downloader-v78.js',
-     'litres-downloader-v79.js'
+     'litres-downloader-v79.js','litres-downloader-v80.js'
     ].forEach(f => fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' }).catch(()=>{}));
 
     // ═══ 🔊 SOUND ═══
@@ -59,7 +61,9 @@
         pdf(){ this.note(740,0.2,0.08,0,'triangle'); this.note(988,0.25,0.07,0.1,'triangle'); },
         print(){ this.chord([523,698,880],0.6,0.10,'sine'); },
         cloud(){ this.chord([659,880,1047],0.5,0.09,'triangle'); },
-        cloudDone(){ this.chord([880,1047,1319,1568],0.6,0.10,'triangle'); }
+        cloudDone(){ this.chord([880,1047,1319,1568],0.6,0.10,'triangle'); },
+        local(){ this.note(698,0.15,0.07,0,'triangle'); this.note(880,0.2,0.06,0.08,'triangle'); },
+        recenter(){ this.glide(440,880,0.25,0.08); }
     };
     window.addEventListener('beforeunload', () => { try{ Sound.ctx?.close(); }catch(e){} });
 
@@ -93,6 +97,7 @@
     const SAVINGS_KEY = 'litres_saved_money';
     const PRINT_MODE_KEY = 'litres_print_pdf_mode';
     const UI_POS_KEY = 'litres_ui_pos';
+    const LOCAL_MODE_KEY = 'litres_local_mode'; // v80.1
     const JSON_CHECKPOINT_KEY = 'litres_json_checkpoint';
     const YADISK_TOKEN_KEY = 'litres_yadisk_token';
     const YADISK_FOLDER_KEY = 'litres_yadisk_folder';
@@ -165,43 +170,28 @@
             console.log(`☁️ YaDisk: токен ${this.token ? '✅' : '❌'}, база "${this.baseFolder}", год ${this.useYearFolders ? 'ВКЛ' : 'ВЫКЛ'}, режим ${this.enabled ? 'ВКЛ' : 'ВЫКЛ'}`);
         },
 
-        getYearFolder(){
-            const year = new Date().getFullYear();
-            return `${this.baseFolder}/${year}`;
-        },
-
-        getTargetFolder(){
-            return this.useYearFolders ? this.getYearFolder() : this.baseFolder;
-        },
+        getYearFolder(){ return `${this.baseFolder}/${new Date().getFullYear()}`; },
+        getTargetFolder(){ return this.useYearFolders ? this.getYearFolder() : this.baseFolder; },
 
         async request(path, opts={}){
             if(!this.token) throw new Error('нет токена Яндекс.Диска');
             const url = path.startsWith('http') ? path : `${this.apiBase}${path}`;
-            const headers = {
-                'Authorization': `OAuth ${this.token}`,
-                ...(opts.headers||{})
-            };
+            const headers = { 'Authorization': `OAuth ${this.token}`, ...(opts.headers||{}) };
             let body = opts.body;
             if(body && typeof body === 'object' && !(body instanceof Blob)){
                 headers['Content-Type'] = 'application/json';
                 body = JSON.stringify(body);
             }
-            const r = await fetch(url, { ...opts, headers, body });
-            return r;
+            return fetch(url, { ...opts, headers, body });
         },
 
         async checkToken(){
             try{
                 const r = await this.request('/');
-                if(!r.ok){
-                    const err = await r.json().catch(()=>({}));
-                    return { ok:false, error:`HTTP ${r.status}: ${err.message||''}` };
-                }
+                if(!r.ok){ const err = await r.json().catch(()=>({})); return { ok:false, error:`HTTP ${r.status}: ${err.message||''}` }; }
                 const d = await r.json();
                 return { ok:true, totalSpace: d.total_space, usedSpace: d.used_space };
-            }catch(e){
-                return { ok:false, error: e.message };
-            }
+            }catch(e){ return { ok:false, error: e.message }; }
         },
 
         async ensureFolder(folderPath){
@@ -211,11 +201,7 @@
             if(r.ok) return true;
             if(r.status === 404){
                 const cr = await this.request(`/resources?path=${path}`, { method:'PUT' });
-                if(!cr.ok){
-                    const err = await cr.json().catch(()=>({}));
-                    console.warn(`⚠️ Не удалось создать папку ${folderPath}:`, err.message);
-                    return false;
-                }
+                if(!cr.ok){ const err = await cr.json().catch(()=>({})); console.warn(`⚠️ Не удалось создать папку ${folderPath}:`, err.message); return false; }
                 console.log(`✅ YaDisk: создана папка ${folderPath}`);
                 return true;
             }
@@ -236,37 +222,26 @@
 
         async uploadFile(filename, blob, onProgress){
             if(!this.token) throw new Error('нет токена');
-
             const folderOk = await this.ensureFullPath();
             if(!folderOk) throw new Error('не удалось создать папки на Яндекс.Диске');
-
             const targetFolder = this.getTargetFolder();
             const fullPath = `${targetFolder}/${filename}`;
             const path = encodeURIComponent(fullPath);
-
             addLog(`☁️ Папка: ${targetFolder}/`, 'net');
             addLog(`☁️ Получаем URL для загрузки...`, 'net');
-
             const urlResp = await this.request(`/resources/upload?path=${path}&overwrite=true`);
-            if(!urlResp.ok){
-                const err = await urlResp.json().catch(()=>({}));
-                throw new Error(`upload URL: HTTP ${urlResp.status} ${err.message||''}`);
-            }
+            if(!urlResp.ok){ const err = await urlResp.json().catch(()=>({})); throw new Error(`upload URL: HTTP ${urlResp.status} ${err.message||''}`); }
             const { href } = await urlResp.json();
-
             addLog(`☁️ Загружаем ${fmtBytes(blob.size)} → ${fullPath}`, 'net');
-
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open('PUT', href, true);
-
                 xhr.upload.onprogress = (e) => {
                     if(e.lengthComputable && onProgress){
                         const pct = (e.loaded / e.total) * 100;
                         onProgress(e.loaded, e.total, pct);
                     }
                 };
-
                 xhr.onload = async () => {
                     if(xhr.status >= 200 && xhr.status < 300){
                         let publicUrl = null;
@@ -275,19 +250,13 @@
                                 const pubResp = await this.request(`/resources/publish?path=${path}`, { method:'PUT' });
                                 if(pubResp.ok){
                                     const metaResp = await this.request(`/resources?path=${path}&fields=public_url`);
-                                    if(metaResp.ok){
-                                        const meta = await metaResp.json();
-                                        publicUrl = meta.public_url;
-                                    }
+                                    if(metaResp.ok){ const meta = await metaResp.json(); publicUrl = meta.public_url; }
                                 }
                             }catch(e){ console.warn('publish error:', e.message); }
                         }
                         resolve({ ok:true, path: fullPath, folder: targetFolder, publicUrl });
-                    } else {
-                        reject(new Error(`PUT failed: HTTP ${xhr.status}`));
-                    }
+                    } else reject(new Error(`PUT failed: HTTP ${xhr.status}`));
                 };
-
                 xhr.onerror = () => reject(new Error('XHR network error'));
                 xhr.ontimeout = () => reject(new Error('XHR timeout'));
                 xhr.timeout = 600000;
@@ -305,26 +274,11 @@
             }catch(e){ return []; }
         },
 
-        async setToken(token){
-            this.token = token.trim();
-            try{ localStorage.setItem(YADISK_TOKEN_KEY, this.token); }catch(e){}
-        },
-        setBaseFolder(folder){
-            this.baseFolder = folder.trim().replace(/^\/?/, '/').replace(/\/?$/, '');
-            try{ localStorage.setItem(YADISK_FOLDER_KEY, this.baseFolder); }catch(e){}
-        },
-        setUseYearFolders(use){
-            this.useYearFolders = !!use;
-            try{ localStorage.setItem(YADISK_YEAR_KEY, use ? 'true' : 'false'); }catch(e){}
-        },
-        setEnabled(enabled){
-            this.enabled = enabled;
-            try{ localStorage.setItem(YADISK_MODE_KEY, enabled ? 'true' : 'false'); }catch(e){}
-        },
-        setPublish(publish){
-            this.publish = publish;
-            try{ localStorage.setItem(YADISK_PUBLISH_KEY, publish ? 'true' : 'false'); }catch(e){}
-        }
+        async setToken(token){ this.token = token.trim(); try{ localStorage.setItem(YADISK_TOKEN_KEY, this.token); }catch(e){} },
+        setBaseFolder(folder){ this.baseFolder = folder.trim().replace(/^\/?/, '/').replace(/\/?$/, ''); try{ localStorage.setItem(YADISK_FOLDER_KEY, this.baseFolder); }catch(e){} },
+        setUseYearFolders(use){ this.useYearFolders = !!use; try{ localStorage.setItem(YADISK_YEAR_KEY, use ? 'true' : 'false'); }catch(e){} },
+        setEnabled(enabled){ this.enabled = enabled; try{ localStorage.setItem(YADISK_MODE_KEY, enabled ? 'true' : 'false'); }catch(e){} },
+        setPublish(publish){ this.publish = publish; try{ localStorage.setItem(YADISK_PUBLISH_KEY, publish ? 'true' : 'false'); }catch(e){} }
     };
 
     // ═══ 📚 Библиотеки ═══
@@ -334,37 +288,14 @@
     function loadScript(urls, onSuccess, onFail, name){
         let idx = 0;
         (function tryNext(){
-            if(idx >= urls.length){
-                console.warn(`❌ ${name}: все источники не сработали`);
-                if(onFail) onFail();
-                return;
-            }
+            if(idx >= urls.length){ console.warn(`❌ ${name}: все источники не сработали`); if(onFail) onFail(); return; }
             const url = urls[idx++];
             const s = document.createElement('script');
             let done = false;
-            const timer = setTimeout(() => {
-                if(done) return;
-                done = true;
-                console.warn(`⚠️ ${name}: timeout 12s`);
-                try{ s.remove(); }catch(e){}
-                tryNext();
-            }, 12000);
+            const timer = setTimeout(() => { if(done) return; done = true; console.warn(`⚠️ ${name}: timeout 12s`); try{ s.remove(); }catch(e){} tryNext(); }, 12000);
             s.src = url;
-            s.onload = () => {
-                if(done) return;
-                done = true;
-                clearTimeout(timer);
-                const host = url.split('/')[2] || '?';
-                console.log(`✅ ${name} (${host})`);
-                onSuccess();
-            };
-            s.onerror = () => {
-                if(done) return;
-                done = true;
-                clearTimeout(timer);
-                console.warn(`⚠️ ${name}: ${url} не загрузился`);
-                tryNext();
-            };
+            s.onload = () => { if(done) return; done = true; clearTimeout(timer); const host = url.split('/')[2] || '?'; console.log(`✅ ${name} (${host})`); onSuccess(); };
+            s.onerror = () => { if(done) return; done = true; clearTimeout(timer); console.warn(`⚠️ ${name}: ${url} не загрузился`); tryNext(); };
             document.head.appendChild(s);
         })();
     }
@@ -478,12 +409,8 @@
             bookInfo.price = p.prices?.final_price || p.prices?.full_price || null;
             bookInfo.imagesCount = p.images_count || 0;
             bookInfo.isDraft = !!(p.is_draft || p.art_type === 1 || (p.my_art_status === 0 && !p.files?.length));
-
             let realFileId = p.release_file_id || null;
-            if(!realFileId && p.files?.length){
-                const main = p.files.find(f => !f.is_additional) || p.files[0];
-                realFileId = main?.id || main?.file_id || null;
-            }
+            if(!realFileId && p.files?.length){ const main = p.files.find(f => !f.is_additional) || p.files[0]; realFileId = main?.id || main?.file_id || null; }
             if(!realFileId && p.preview_file_id) realFileId = p.preview_file_id;
             if(!realFileId && p.additional_info?.release_file_id) realFileId = p.additional_info.release_file_id;
             bookInfo.fileId = realFileId || fileId;
@@ -530,16 +457,12 @@
                         }
                         for(const attr of [...child.attributes]) child.removeAttribute(attr.name);
                         walk(child);
-                    } else if(child.nodeType === Node.COMMENT_NODE){
-                        child.remove();
-                    }
+                    } else if(child.nodeType === Node.COMMENT_NODE){ child.remove(); }
                 }
             };
             walk(doc.body);
             return doc.body.innerHTML;
-        }catch(e){
-            return escHtml(html).replace(/\n/g, '<br>');
-        }
+        }catch(e){ return escHtml(html).replace(/\n/g, '<br>'); }
     }
 
     async function detectBlobType(blob){
@@ -592,30 +515,17 @@
                 const ctrl = new AbortController();
                 const attemptTimeout = setTimeout(()=>ctrl.abort(), 600000);
                 const r = await fetch(url, { ...opts, headers, signal: ctrl.signal });
-                if(r.status === 403 || r.status === 401){
-                    clearTimeout(attemptTimeout);
-                    addLog(`🚫 ${label}: нет доступа (${r.status})`, 'err');
-                    return null;
-                }
+                if(r.status === 403 || r.status === 401){ clearTimeout(attemptTimeout); addLog(`🚫 ${label}: нет доступа (${r.status})`, 'err'); return null; }
                 if(loaded > 0){
-                    if(r.status === 200){
-                        addLog(`⚠️ ${label}: 200 вместо 206 — перезапуск`, 'warn');
-                        chunks.length = 0; loaded = 0;
-                    } else if(r.status !== 206){
-                        throw new Error(`HTTP ${r.status}`);
-                    }
-                } else if(!r.ok){
-                    throw new Error(`HTTP ${r.status}`);
-                }
+                    if(r.status === 200){ addLog(`⚠️ ${label}: 200 вместо 206 — перезапуск`, 'warn'); chunks.length = 0; loaded = 0; }
+                    else if(r.status !== 206){ throw new Error(`HTTP ${r.status}`); }
+                } else if(!r.ok){ throw new Error(`HTTP ${r.status}`); }
                 const cr = r.headers.get('content-range');
                 if(cr){
                     const m = cr.match(/bytes\s+(\d+)-(\d+)\/(\d+)/);
                     if(m){
                         const start = parseInt(m[1], 10);
-                        if(loaded > 0 && start !== loaded){
-                            addLog(`⚠️ ${label}: Range start=${start}, ждали ${loaded} — перезапуск`, 'warn');
-                            chunks.length = 0; loaded = 0;
-                        }
+                        if(loaded > 0 && start !== loaded){ addLog(`⚠️ ${label}: Range start=${start}, ждали ${loaded} — перезапуск`, 'warn'); chunks.length = 0; loaded = 0; }
                         total = parseInt(m[3], 10);
                     }
                 } else {
@@ -676,10 +586,7 @@
         const blob = new Blob(chunks);
         const sec = (performance.now()-t0)/1000;
         const info = await detectBlobType(blob);
-        if(expectedTypes && !expectedTypes.includes(info.type)){
-            addLog(`⚠️ ${label}: тип "${info.name}" (${info.type}) не подходит`, 'warn');
-            return null;
-        }
+        if(expectedTypes && !expectedTypes.includes(info.type)){ addLog(`⚠️ ${label}: тип "${info.name}" (${info.type}) не подходит`, 'warn'); return null; }
         addLog(`✅ ${label}: ${fmtBytes(blob.size)} за ${sec.toFixed(1)}s${attempt>1?` [${attempt} попыток]`:''}`, 'ok');
         blob._detected = info;
         return blob;
@@ -716,9 +623,8 @@
             if(!link){ r.note = 'нет link'; return r; }
             const m = link.match(/fname=([^&]+)/);
             const fname = m ? decodeURIComponent(m[1]) : '';
-            if(/\.pdf$/i.test(fname) || /fname=[^&]*\.pdf/i.test(link)){
-                r.ok = true; r.link = link; r.note = fname || 'PDF';
-            } else { r.note = `не PDF (fname="${fname||'?'}")`; }
+            if(/\.pdf$/i.test(fname) || /fname=[^&]*\.pdf/i.test(link)){ r.ok = true; r.link = link; r.note = fname || 'PDF'; }
+            else { r.note = `не PDF (fname="${fname||'?'}")`; }
         }catch(e){ r.note = e.message; }
         return r;
     }
@@ -736,14 +642,8 @@
             const mimetype = mimeMatch ? decodeURIComponent(mimeMatch[1]) : '';
             const realMatch = link.match(/real_url=([^&]+)/);
             const realUrl = realMatch ? decodeURIComponent(realMatch[1]) : '';
-            if(mimetype.includes('json') || realUrl.includes('/json/')){
-                r.note = `маскировка: mime=${mimetype}`;
-                return r;
-            }
-            if(mimetype.includes('zip') || /\.(zip|fb2|epub)$/i.test(realUrl)){
-                r.ok = true; r.link = link; r.note = realUrl.split('/').pop() || 'ZIP';
-                return r;
-            }
+            if(mimetype.includes('json') || realUrl.includes('/json/')){ r.note = `маскировка: mime=${mimetype}`; return r; }
+            if(mimetype.includes('zip') || /\.(zip|fb2|epub)$/i.test(realUrl)){ r.ok = true; r.link = link; r.note = realUrl.split('/').pop() || 'ZIP'; return r; }
             r.note = `непонятный link`;
         }catch(e){ r.note = e.message; }
         return r;
@@ -767,10 +667,7 @@
                 const realMatch = link.match(/real_url=([^&]+)/);
                 const realUrl = realMatch ? decodeURIComponent(realMatch[1]) : '';
                 if(mimetype.includes('json') || realUrl.includes('/json/')) continue;
-                if(mimetype.includes('zip') || /\.(zip|fb2|epub)$/i.test(realUrl)){
-                    r.ok = true; r.link = link; r.note = realUrl.split('/').pop() || 'ZIP';
-                    return r;
-                }
+                if(mimetype.includes('zip') || /\.(zip|fb2|epub)$/i.test(realUrl)){ r.ok = true; r.link = link; r.note = realUrl.split('/').pop() || 'ZIP'; return r; }
             }
             if(!r.note) r.note = 'не найдено';
         }catch(e){ r.note = e.message; }
@@ -793,10 +690,7 @@
                 const link = d?.payload?.data?.link || d?.payload?.link || '';
                 if(!link) continue;
                 const fmt = detectFormatFromName(link);
-                if(fmt && ['MP3','M4B','M4A','FLAC','OGG','WAV','MP4','WEBM','MKV'].includes(fmt.name)){
-                    r.ok = true; r.link = link; r.note = `${fmt.icon} ${fmt.name}`; r.format = fmt;
-                    return r;
-                }
+                if(fmt && ['MP3','M4B','M4A','FLAC','OGG','WAV','MP4','WEBM','MKV'].includes(fmt.name)){ r.ok = true; r.link = link; r.note = `${fmt.icon} ${fmt.name}`; r.format = fmt; return r; }
             }
             r.note = 'не найдено';
         }catch(e){ r.note = e.message; }
@@ -808,11 +702,8 @@
         try{
             const chUrl = `https://www.litres.ru/download_book_subscr/${artId}/${fid}/json/000.js`;
             let rHead;
-            try{
-                rHead = await fetchWithTimeout(chUrl, { credentials:'include', headers:{ 'Range':'bytes=0-15' } }, 4000);
-            }catch(e){
-                rHead = await fetchWithTimeout(chUrl, { credentials:'include' }, 5000);
-            }
+            try{ rHead = await fetchWithTimeout(chUrl, { credentials:'include', headers:{ 'Range':'bytes=0-15' } }, 4000); }
+            catch(e){ rHead = await fetchWithTimeout(chUrl, { credentials:'include' }, 5000); }
             if(rHead.status === 403 || rHead.status === 401){ r.note = `HTTP ${rHead.status}`; return r; }
             if(rHead.status === 404){ r.note = 'HTTP 404'; return r; }
             if(!rHead.ok && rHead.status !== 206){ r.note = `HTTP ${rHead.status}`; return r; }
@@ -823,16 +714,9 @@
                     const { value } = await reader.read();
                     try{ reader.cancel(); }catch(e){}
                     head = value || new Uint8Array(0);
-                } else {
-                    const buf = await rHead.arrayBuffer();
-                    head = new Uint8Array(buf.slice(0, 16));
-                }
+                } else { const buf = await rHead.arrayBuffer(); head = new Uint8Array(buf.slice(0, 16)); }
             }catch(e){ head = new Uint8Array(0); }
-            if(!head || head.length === 0){
-                r.ok = true; r.type = 'json'; r.link = chUrl;
-                r.note = 'файл существует (Range пустой)';
-                return r;
-            }
+            if(!head || head.length === 0){ r.ok = true; r.type = 'json'; r.link = chUrl; r.note = 'файл существует (Range пустой)'; return r; }
             const hex = Array.from(head.slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
             const str = (s,l) => String.fromCharCode(...head.slice(s,s+l));
             let type = 'unknown';
@@ -878,26 +762,19 @@
 
     async function diagnoseStrategies(){
         const fid = state.fileId || bookInfo.fileId;
-        if(!fid){
-            console.warn('❌ Диагностика: нет fileId');
-            addLog('❌ Диагностика: нет fileId', 'err');
-            return null;
-        }
+        if(!fid){ console.warn('❌ Диагностика: нет fileId'); addLog('❌ Диагностика: нет fileId', 'err'); return null; }
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
-        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v80.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
+        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v80.1', 'color:#4a8af4;font-size:14px;font-weight:bold;');
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
         console.log(`📖 Книга: "${bookInfo.title}"`);
         console.log(`🆔 artId=${artId}, fileId=${fid}`);
         if(bookInfo.isDraft) console.log('%c📝 ВНИМАНИЕ: черновик/драфт!', 'color:#f0a500;font-weight:bold');
         console.log('');
-
         addLog('🔬 Диагностика стратегий...', 'step');
         setReadingStatus('🔬 Проверка форматов...');
         try{ Sound.diag(); }catch(e){}
-
         const t0 = performance.now();
         const results = {};
-
         const strategies = [
             ['pdf',       '📕 PDF (прямой)',  checkStrategy_Pdf],
             ['zipToc',    '📦 ZIP (toc.js)',  checkStrategy_ZipToc],
@@ -906,40 +783,27 @@
             ['json',      '📖 000.js (файл)', checkStrategy_000js],
             ['pdfjs',     '📕 PDFjs (постр.)',checkStrategy_Pdfjs]
         ];
-
         for(const [key, label, fn] of strategies){
             setReadingStatus(`🔬 ${label}...`);
-            try{
-                results[key] = await fn(fid);
-            }catch(e){
-                results[key] = { ok:false, note:e.message, name:label };
-            }
+            try{ results[key] = await fn(fid); }
+            catch(e){ results[key] = { ok:false, note:e.message, name:label }; }
         }
-
         const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-
         const tableData = {};
-        for(const [key, r] of Object.entries(results)){
-            tableData[key] = { 'Стратегия': r.name, 'Статус': r.ok ? '✅ ДОСТУПНО' : '❌ нет', 'Инфо': r.note || '—' };
-        }
+        for(const [key, r] of Object.entries(results)) tableData[key] = { 'Стратегия': r.name, 'Статус': r.ok ? '✅ ДОСТУПНО' : '❌ нет', 'Инфо': r.note || '—' };
         console.log('%c📊 РЕЗУЛЬТАТЫ ДИАГНОСТИКИ:', 'color:#4a8af4;font-weight:bold;font-size:13px');
         console.table(tableData);
         console.log(`⏱️ Все проверки за ${elapsed}s`);
-
         const available = Object.values(results).filter(r => r.ok);
-        if(available.length === 0){
-            console.warn('%c❌ Ни одна стратегия не доступна!', 'color:#e74c3c;font-weight:bold;font-size:13px');
-            addLog(`❌ Все стратегии провалились (${elapsed}s)`, 'err');
-        } else {
+        if(available.length === 0){ console.warn('%c❌ Ни одна стратегия не доступна!', 'color:#e74c3c;font-weight:bold;font-size:13px'); addLog(`❌ Все стратегии провалились (${elapsed}s)`, 'err'); }
+        else {
             console.log(`%c✅ Доступно стратегий: ${available.length}`, 'color:#2ecc71;font-weight:bold;font-size:13px');
             available.forEach(r => console.log(`   ${r.name} → ${r.note}`));
             addLog(`✅ Доступно: ${available.length} стратегий (${elapsed}s)`, 'ok');
         }
-
         if(results.pdf?.ok && !bookInfo.format){ bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay(); }
         else if(results.zipToc?.ok && !bookInfo.format){ bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay(); }
         else if(results.audio?.ok && !bookInfo.format){ bookInfo.format = results.audio.format; updateFormatDisplay(); }
-
         return results;
     }
 
@@ -1029,7 +893,7 @@ img.litres-img{max-width:100%;height:auto;display:block;margin:24px auto;border-
 <h1 class="book-title">${st}</h1>
 <div class="meta">✍️ ${sa}</div>
 ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v80.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
+<div class="footer">📚 LitRes Downloader v80.1<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
 </body></html>`;
     }
 
@@ -1078,9 +942,7 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
 
     async function downloadAllBookImages(chapters){
         const allNames = new Set();
-        for(const html of chapters){
-            for(const n of extractImageNames(html)) allNames.add(n);
-        }
+        for(const html of chapters){ for(const n of extractImageNames(html)) allNames.add(n); }
         if(allNames.size === 0){ addLog('🖼️ Картинок не найдено', 'info'); return new Map(); }
         const list = [...allNames];
         const sample = list.slice(0, 5).join(', ');
@@ -1197,7 +1059,7 @@ h2{font-size:22px;margin:40px 0 18px;color:#1a2a4a;border-left:4px solid #4a8af4
 <div class="annotation">${cleanAnn || '<i>Аннотация отсутствует</i>'}</div>
 <h2>💬 Рецензии (${reviews.length})</h2>
 ${revHtml}
-<div class="footer">📚 LitRes Downloader v80.0<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
+<div class="footer">📚 LitRes Downloader v80.1<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
 </body></html>`;
     }
 
@@ -1220,51 +1082,12 @@ ${revHtml}
         return null;
     }
 
-    // ═══ triggerDownload с Яндекс.Диском ═══
-    async function triggerDownload(blob, filename){
-        if(YaDisk.enabled && YaDisk.token){
-            addLog(`☁️ Отправляем на Яндекс.Диск: ${filename}`, 'step');
-            setReadingStatus(`☁️ ${filename} → Яндекс.Диск`);
-            progressBar.style.width = '0%';
-            percentText.textContent = '0%';
-            progressText.textContent = `☁️ ${filename}`;
+    // ═══ v80.1: triggerDownload с локальным режимом ═══
+    function isLocalEnabled(){
+        try{ return localStorage.getItem(LOCAL_MODE_KEY) === 'true'; }catch(e){ return false; }
+    }
 
-            try{
-                const result = await YaDisk.uploadFile(filename, blob, (loaded, total, pct) => {
-                    progressBar.style.width = `${Math.min(pct,100)}%`;
-                    percentText.textContent = `${Math.round(pct)}%`;
-                    progressText.textContent = `☁️ ${fmtBytes(loaded)} / ${fmtBytes(total)}`;
-                    readingProgressText.textContent = `☁️ Загрузка на Диск: ${Math.round(pct)}%`;
-                });
-
-                addLog(`✅ Яндекс.Диск: ${result.path}`, 'ok');
-                try{ Sound.cloudDone(); }catch(e){}
-
-                if(result.publicUrl){
-                    addLog(`🔗 Публичная ссылка: ${result.publicUrl}`, 'ok');
-                }
-
-                zipInfo.style.display = 'inline';
-                zipInfo.textContent = `☁️ ${filename} → ${result.folder}/`;
-                zipInfo.style.color = '#2ecc71';
-
-                let extra = '';
-                if(result.publicUrl){
-                    extra = `<div class="ldl-result-line">🔗 Ссылка: <a href="${result.publicUrl}" target="_blank" style="color:#4a8af4;">${result.publicUrl}</a></div>`;
-                }
-                $('result_text').innerHTML += `
-                    <div class="ldl-result-line" style="color:#2ecc71;font-weight:700;margin-top:6px;">☁️ Загружено на Яндекс.Диск</div>
-                    <div class="ldl-result-line">📁 ${result.path}</div>
-                    ${extra}
-                `;
-
-                return { ok:true, method:'yadisk', path:result.path, publicUrl:result.publicUrl };
-            }catch(e){
-                addLog(`❌ Яндекс.Диск: ${e.message} → fallback в «Загрузки»`, 'err');
-                try{ Sound.error(); }catch(e2){}
-            }
-        }
-
+    function saveToBrowser(blob, filename){
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = filename;
@@ -1272,7 +1095,68 @@ ${revHtml}
         document.body.appendChild(a);
         a.click();
         setTimeout(()=>{ a.remove(); URL.revokeObjectURL(a.href); }, 3000);
-        return { ok:true, method:'browser' };
+    }
+
+    async function triggerDownload(blob, filename){
+        const yadiskOn = YaDisk.enabled && YaDisk.token;
+        const localOn = isLocalEnabled();
+        const results = { yadisk: null, local: false };
+
+        // Если включено всё — дублируем
+        if(yadiskOn){
+            addLog(`☁️ Отправляем на Яндекс.Диск: ${filename}`, 'step');
+            setReadingStatus(`☁️ ${filename} → Яндекс.Диск`);
+            progressBar.style.width = '0%';
+            percentText.textContent = '0%';
+            progressText.textContent = `☁️ ${filename}`;
+            try{
+                const result = await YaDisk.uploadFile(filename, blob, (loaded, total, pct) => {
+                    progressBar.style.width = `${Math.min(pct,100)}%`;
+                    percentText.textContent = `${Math.round(pct)}%`;
+                    progressText.textContent = `☁️ ${fmtBytes(loaded)} / ${fmtBytes(total)}`;
+                    readingProgressText.textContent = `☁️ Загрузка на Диск: ${Math.round(pct)}%`;
+                });
+                results.yadisk = result;
+                addLog(`✅ Яндекс.Диск: ${result.path}`, 'ok');
+                try{ Sound.cloudDone(); }catch(e){}
+                if(result.publicUrl) addLog(`🔗 Публичная ссылка: ${result.publicUrl}`, 'ok');
+                zipInfo.style.display = 'inline';
+                zipInfo.textContent = `☁️ ${filename} → ${result.folder}/`;
+                zipInfo.style.color = '#2ecc71';
+                let extra = '';
+                if(result.publicUrl) extra = `<div class="ldl-result-line">🔗 Ссылка: <a href="${result.publicUrl}" target="_blank" style="color:#4a8af4;">${result.publicUrl}</a></div>`;
+                $('result_text').innerHTML += `
+                    <div class="ldl-result-line" style="color:#2ecc71;font-weight:700;margin-top:6px;">☁️ Загружено на Яндекс.Диск</div>
+                    <div class="ldl-result-line">📁 ${result.path}</div>
+                    ${extra}
+                `;
+            }catch(e){
+                addLog(`❌ Яндекс.Диск: ${e.message}`, 'err');
+                try{ Sound.error(); }catch(e2){}
+            }
+        }
+
+        // v80.1: локально — если явно включено ИЛИ Диск выключен/упал (fallback)
+        const needLocal = localOn || !yadiskOn;
+        if(needLocal){
+            if(localOn && yadiskOn){
+                addLog(`💾 Дублируем локально: ${filename}`, 'step');
+                setReadingStatus(`💾 ${filename} → Загрузки`);
+                try{ Sound.local(); }catch(e){}
+            } else if(localOn){
+                addLog(`💾 Сохраняем локально: ${filename}`, 'step');
+                setReadingStatus(`💾 ${filename} → Загрузки`);
+                try{ Sound.local(); }catch(e){}
+            } else {
+                addLog(`💾 Fallback → Загрузки: ${filename}`, 'step');
+            }
+            saveToBrowser(blob, filename);
+            results.local = true;
+        }
+
+        if(!yadiskOn && !localOn) { /* по факту уже сохранили выше — fallback */ }
+
+        return { ok: true, method: yadiskOn ? (localOn ? 'yadisk+local' : 'yadisk') : 'local', ...results };
     }
 
     async function downloadViaAnchor(url, fallbackFilename, label='файла'){
@@ -1293,10 +1177,8 @@ ${revHtml}
     async function buildPdfViaPrint(htmlContent, title = 'Книга', imagesMap = null){
         addLog(`🖨️ Готовим предпросмотр печати...`, 'step');
         try{ Sound.print(); }catch(e){}
-
         const objUrls = [];
         let html = htmlContent;
-
         if(imagesMap && imagesMap.size > 0){
             console.log(`🖼️ Подменяем ${imagesMap.size} картинок на blob URL...`);
             let replaced = 0;
@@ -1305,11 +1187,8 @@ ${revHtml}
                 const objUrl = URL.createObjectURL(blob);
                 objUrls.push(objUrl);
                 const candidates = [
-                    `src="images/${name}"`,
-                    `src="images/${name.replace(/^images\//,'')}"`,
-                    `src="${name}"`,
-                    `src='images/${name}'`,
-                    `src='${name}'`
+                    `src="images/${name}"`, `src="images/${name.replace(/^images\//,'')}"`,
+                    `src="${name}"`, `src='images/${name}'`, `src='${name}'`
                 ];
                 let didReplace = false;
                 for(const cand of candidates){
@@ -1325,29 +1204,21 @@ ${revHtml}
             }
             console.log(`🔗 Подменено: ${replaced} из ${imagesMap.size}`);
         }
-
         const w = window.open('', '_blank');
         if(!w){
             addLog('⚠️ Попап заблокирован! Разреши попапы для litres.ru', 'err');
             for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} }
             return { ok:false, reason:'popup-blocked' };
         }
-
         w.document.open();
         w.document.write(html);
         w.document.close();
-
         await new Promise(resolve => {
-            const checkReady = () => {
-                if(w.document.readyState === 'complete') resolve();
-                else setTimeout(checkReady, 100);
-            };
+            const checkReady = () => { if(w.document.readyState === 'complete') resolve(); else setTimeout(checkReady, 100); };
             checkReady();
             setTimeout(resolve, 5000);
         });
-
         await new Promise(r => setTimeout(r, 800));
-
         try{
             w.focus();
             w.print();
@@ -1356,22 +1227,12 @@ ${revHtml}
             addLog(`⚠️ Не удалось вызвать print(): ${e.message}`, 'err');
             return { ok:false, reason:'print-failed', error:e.message };
         }
-
-        setTimeout(() => {
-            for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} }
-            console.log(`♻️ Ревокнуто ${objUrls.length} blob URL`);
-        }, 60000);
-
+        setTimeout(() => { for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} } }, 60000);
         return { ok: true, method: 'print' };
     }
 
     async function buildPdfFromImages(imageBlobs, title='Книга'){
-        if(!JSPDFLoaded){
-            await new Promise(res => {
-                const c = setInterval(() => { if(JSPDFLoaded){ clearInterval(c); res(); } }, 200);
-                setTimeout(() => { clearInterval(c); res(); }, 8000);
-            });
-        }
+        if(!JSPDFLoaded){ await new Promise(res => { const c = setInterval(() => { if(JSPDFLoaded){ clearInterval(c); res(); } }, 200); setTimeout(() => { clearInterval(c); res(); }, 8000); }); }
         if(!JSPDFLoaded || !window.jspdf?.jsPDF) throw new Error('jsPDF не загрузился');
         const { jsPDF } = window.jspdf;
         let pdf = null;
@@ -1380,27 +1241,14 @@ ${revHtml}
         for(let i = 0; i < imageBlobs.length; i++){
             if(state.isStopped) throw new Error('остановлено пользователем');
             const blob = imageBlobs[i];
-            const dataUrl = await new Promise((res, rej) => {
-                const fr = new FileReader();
-                fr.onload = () => res(fr.result);
-                fr.onerror = rej;
-                fr.readAsDataURL(blob);
-            });
+            const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
             const isPng = blob.type.includes('png') || dataUrl.startsWith('data:image/png');
             const format = isPng ? 'PNG' : 'JPEG';
-            const dim = await new Promise(res => {
-                const img = new Image();
-                img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight });
-                img.onerror = () => res({ w: 595, h: 842 });
-                img.src = dataUrl;
-            });
+            const dim = await new Promise(res => { const img = new Image(); img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight }); img.onerror = () => res({ w: 595, h: 842 }); img.src = dataUrl; });
             const orientation = dim.w > dim.h ? 'l' : 'p';
             const pw = dim.w, ph = dim.h;
-            if(i === 0){
-                pdf = new jsPDF({ orientation, unit: 'px', format: [pw, ph], hotfixes: ['px_scaling'] });
-            } else {
-                pdf.addPage([pw, ph], orientation);
-            }
+            if(i === 0) pdf = new jsPDF({ orientation, unit: 'px', format: [pw, ph], hotfixes: ['px_scaling'] });
+            else pdf.addPage([pw, ph], orientation);
             pdf.addImage(dataUrl, format, 0, 0, pw, ph);
             if(i > 0 && i % 5 === 0){
                 const pct = Math.round((i / imageBlobs.length) * 100);
@@ -1417,10 +1265,7 @@ ${revHtml}
     }
 
     function openReaderInNewTab(){
-        if(!state.fileId){
-            alert('❌ fileId неизвестен. Сначала открой страницу книги.');
-            return;
-        }
+        if(!state.fileId){ alert('❌ fileId неизвестен. Сначала открой страницу книги.'); return; }
         const url = `https://www.litres.ru/static/reader/text/index.html?baseurl=/download_book_subscr/${state.artId}/${state.fileId}/&file=${state.fileId}&art=${state.artId}&uilang=ru`;
         const w = window.open(url, '_blank');
         if(!w){ addLog(`⚠️ Попап заблокирован: ${url}`, 'warn'); }
@@ -1448,6 +1293,7 @@ ${revHtml}
             .ldl-icon-btn{width:30px;height:30px;padding:0;border-radius:9px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:none;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
             .ldl-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff;}
             .ldl-icon-btn.yadisk-btn:hover{background:rgba(252,63,29,.15);color:#fc3f1d;}
+            .ldl-icon-btn.pos-btn:hover{background:rgba(240,165,0,.15);color:#f0a500;}
             .ldl-body{padding:12px 16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;}
             .ldl-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px 12px;font-size:11px;line-height:1.5;}
             .ldl-card.book-card{background:linear-gradient(135deg,rgba(74,138,244,.08),rgba(74,138,244,.03));border-left:3px solid #4a8af4;}
@@ -1500,10 +1346,12 @@ ${revHtml}
             .ldl-toggle.auto input{accent-color:#27ae60;}
             .ldl-toggle.print input{accent-color:#f0a500;}
             .ldl-toggle.yadisk input{accent-color:#fc3f1d;}
+            .ldl-toggle.local input{accent-color:#2ecc71;}
             .ldl-force-status{margin-left:auto;font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px;font-family:'SF Mono',Consolas,monospace;}
             .ldl-force-status.on{color:#e74c3c;background:rgba(231,76,60,.15);}
             .ldl-force-status.print-on{color:#f0a500;background:rgba(240,165,0,.15);}
             .ldl-force-status.cloud-on{color:#fc3f1d;background:rgba(252,63,29,.15);}
+            .ldl-force-status.local-on{color:#2ecc71;background:rgba(46,204,113,.15);}
             .ldl-footer{padding:0 16px 14px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:rgba(255,255,255,.4);flex-shrink:0;gap:8px;}
             #status_text{flex:1;text-align:center;font-family:'SF Mono',Consolas,monospace;}
             #zip_info{color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;display:none;}
@@ -1524,11 +1372,12 @@ ${revHtml}
                 <div class="ldl-logo">📚</div>
                 <div style="flex:1;min-width:0;">
                     <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v80.0 · yandex.disk</div>
+                    <div class="ldl-subtitle">v80.1 · yandex.disk + local</div>
                 </div>
                 <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
                 <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
                 <button id="btn_yadisk" class="ldl-icon-btn yadisk-btn" title="Яндекс.Диск">☁️</button>
+                <button id="btn_recenter" class="ldl-icon-btn pos-btn" title="Сбросить позицию окна">📍</button>
                 <button id="btn_reader" class="ldl-icon-btn" title="Открыть ридер">📖</button>
                 <button id="btn_minimize" class="ldl-icon-btn" title="Свернуть">—</button>
                 <button id="close_ui" class="ldl-icon-btn" title="Закрыть">✕</button>
@@ -1588,6 +1437,7 @@ ${revHtml}
                 <label class="ldl-toggle auto" title="Автоматически нажать Старт"><input type="checkbox" id="autostart_mode">🚀 АВТО</label>
                 <label class="ldl-toggle print" title="PDF через печать браузера"><input type="checkbox" id="print_mode">🖨️ PDF</label>
                 <label class="ldl-toggle yadisk" title="Грузить книги на Яндекс.Диск"><input type="checkbox" id="yadisk_mode">☁️ Диск</label>
+                <label class="ldl-toggle local" title="Сохранять также в «Загрузки» (можно вместе с Диском)"><input type="checkbox" id="local_mode">💾 Локально</label>
                 <div class="ldl-force-status" id="force_status">⏸ выкл</div>
             </div>
 
@@ -1648,19 +1498,78 @@ ${revHtml}
     };
     try{ state.minimized = localStorage.getItem(MINI_KEY)==='1'; }catch(e){}
 
-    (function makeDraggable(){
-        const handle = $('ldl_drag_handle');
-        if(!handle) return;
-        let sx=0, sy=0, ox=0, oy=0, dragging=false;
+    // ═══ v80.1: DRAG-N-DROP + SMART POSITION ═══
+    const UI_MARGIN = 16;
+
+    function resetUiPosition(animate = true){
+        try{
+            ui.style.transition = animate ? 'left .35s cubic-bezier(.16,1,.3,1), top .35s cubic-bezier(.16,1,.3,1), right .35s, bottom .35s' : 'none';
+        }catch(e){}
+        ui.style.left = 'auto';
+        ui.style.top = 'auto';
+        ui.style.right = UI_MARGIN + 'px';
+        ui.style.bottom = UI_MARGIN + 'px';
+        try{ localStorage.removeItem(UI_POS_KEY); }catch(e){}
+        if(animate) setTimeout(() => { try{ ui.style.transition = ''; }catch(e){} }, 400);
+    }
+
+    function clampUiPosition(){
+        // Если окно за пределами экрана — возвращаем в угол
+        const r = ui.getBoundingClientRect();
+        const w = window.innerWidth, h = window.innerHeight;
+        // Проверяем: видна ли хоть какая-то часть окна
+        const visible = r.right > 40 && r.left < w - 40 && r.bottom > 40 && r.top < h - 40;
+        if(!visible){
+            console.warn('📐 Окно вне экрана — возврат в угол');
+            resetUiPosition(true);
+            return false;
+        }
+        // Если окно частично вылезло — подтягиваем обратно
+        let newLeft = r.left, newTop = r.top, changed = false;
+        if(r.left < 0){ newLeft = 0; changed = true; }
+        if(r.top < 0){ newTop = 0; changed = true; }
+        if(r.right > w){ newLeft = Math.max(0, w - r.width); changed = true; }
+        if(r.bottom > h){ newTop = Math.max(0, h - r.height); changed = true; }
+        if(changed){
+            ui.style.left = newLeft + 'px';
+            ui.style.top = newTop + 'px';
+            ui.style.right = 'auto';
+            ui.style.bottom = 'auto';
+            try{ localStorage.setItem(UI_POS_KEY, JSON.stringify({ left: newLeft, top: newTop })); }catch(e){}
+            return false;
+        }
+        return true;
+    }
+
+    function restoreUiPosition(){
         try{
             const saved = JSON.parse(localStorage.getItem(UI_POS_KEY) || 'null');
-            if(saved && typeof saved.left === 'number'){
+            if(saved && typeof saved.left === 'number' && typeof saved.top === 'number'){
+                const w = window.innerWidth, h = window.innerHeight;
+                // Проверяем, влезает ли
+                const tooFarRight = saved.left > w - 80;
+                const tooFarBottom = saved.top > h - 80;
+                const tooFarLeft = saved.left < -40;
+                const tooFarTop = saved.top < -40;
+                if(tooFarRight || tooFarBottom || tooFarLeft || tooFarTop){
+                    console.warn('📐 Сохранённая позиция вне экрана — сброс');
+                    resetUiPosition(false);
+                    return;
+                }
                 ui.style.left = saved.left + 'px';
                 ui.style.top = saved.top + 'px';
                 ui.style.right = 'auto';
                 ui.style.bottom = 'auto';
+                console.log(`📍 Позиция восстановлена: ${saved.left},${saved.top}`);
             }
         }catch(e){}
+    }
+
+    (function makeDraggable(){
+        const handle = $('ldl_drag_handle');
+        if(!handle) return;
+        let sx=0, sy=0, ox=0, oy=0, dragging=false;
+        restoreUiPosition();
         handle.addEventListener('mousedown', (e) => {
             if(e.target.closest('button')) return;
             dragging = true;
@@ -1672,8 +1581,13 @@ ${revHtml}
         });
         document.addEventListener('mousemove', (e) => {
             if(!dragging) return;
-            const nx = ox + (e.clientX - sx);
-            const ny = oy + (e.clientY - sy);
+            let nx = ox + (e.clientX - sx);
+            let ny = oy + (e.clientY - sy);
+            // v80.1: ограничиваем, чтобы не утащить полностью за экран
+            const w = window.innerWidth, h = window.innerHeight;
+            const rw = ui.offsetWidth || 440, rh = ui.offsetHeight || 200;
+            nx = Math.max(-rw + 80, Math.min(w - 80, nx));
+            ny = Math.max(0, Math.min(h - 40, ny));
             ui.style.left = nx + 'px';
             ui.style.top = ny + 'px';
         });
@@ -1685,9 +1599,18 @@ ${revHtml}
         });
     })();
 
-    const LOG_COLORS = { info:'rgba(255,255,255,.55)', ok:'#2ecc71', err:'#e74c3c', warn:'#f0a500', step:'#4a8af4', net:'#7c5cff', db:'#38bdf8', money:'#2ecc71', cloud:'#fc3f1d' };
+    // v80.1: при ресайзе — проверяем
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if(!state.minimized) clampUiPosition();
+        }, 200);
+    });
+
+    const LOG_COLORS = { info:'rgba(255,255,255,.55)', ok:'#2ecc71', err:'#e74c3c', warn:'#f0a500', step:'#4a8af4', net:'#7c5cff', db:'#38bdf8', money:'#2ecc71', cloud:'#fc3f1d', local:'#2ecc71' };
     function addLog(text, kind='info'){
-        logStatus.textContent = `${({ok:'✓',err:'✕',warn:'⚠',step:'▸',net:'🌐',db:'💾',info:'ℹ️',money:'💰',cloud:'☁️'})[kind]||'ℹ️'} [${new Date().toLocaleTimeString()}] ${text}`;
+        logStatus.textContent = `${({ok:'✓',err:'✕',warn:'⚠',step:'▸',net:'🌐',db:'💾',info:'ℹ️',money:'💰',cloud:'☁️',local:'💾'})[kind]||'ℹ️'} [${new Date().toLocaleTimeString()}] ${text}`;
         logStatus.style.color = LOG_COLORS[kind] || LOG_COLORS.info;
         console.log(`[LOG:${kind}] ${text}`);
     }
@@ -1771,20 +1694,22 @@ ${revHtml}
     }
     function showResult(format, filename, size){
         state.resultFormat = format; state.resultFilename = filename;
-        const sz = size>1048576 ? (size/1048576).toFixed(2)+' MB' : (size/1024).toFixed(0)+' KB';
+        const sz = size>1048576 ? (size/1048576).toFixed(2)+' MB' : size>0 ? (size/1024).toFixed(0)+' KB' : '—';
+        const yadiskOn = YaDisk.enabled && YaDisk.token;
+        const localOn = isLocalEnabled();
         let moneyLine = '';
         if(!state.savingsApplied && bookInfo.price && bookInfo.price > 0){
-            try{
-                SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
-                pulseSavings();
-                moneyLine = `<div class="ldl-result-line">💰 Сэкономлено: <span class="money">${formatPrice(bookInfo.price)}</span></div>`;
-            }catch(e){}
+            try{ SAVINGS.add(state.artId, state.bookTitle, bookInfo.price); pulseSavings(); moneyLine = `<div class="ldl-result-line">💰 Сэкономлено: <span class="money">${formatPrice(bookInfo.price)}</span></div>`; }catch(e){}
             state.savingsApplied = true;
         } else if(!state.savingsApplied && bookInfo.price === 0){
             moneyLine = `<div class="ldl-result-line">🆓 Книга бесплатная</div>`;
             state.savingsApplied = true;
         }
-        $('result_text').innerHTML = `<div class="ldl-result-line">📁 <b>${filename}</b></div><div class="ldl-result-line">📄 Формат: <span class="fmt"><b>${format}</b></span></div><div class="ldl-result-line">📦 Размер: <b>${sz}</b></div>${moneyLine}<div style="margin-top:6px;font-size:10px;color:rgba(255,255,255,.5);">Файл в папке «Загрузки»</div>`;
+        let dest = '';
+        if(yadiskOn && localOn) dest = '☁️ Яндекс.Диск + 💾 Загрузки';
+        else if(yadiskOn) dest = '☁️ Яндекс.Диск';
+        else dest = '💾 Папка «Загрузки»';
+        $('result_text').innerHTML = `<div class="ldl-result-line">📁 <b>${filename}</b></div><div class="ldl-result-line">📄 Формат: <span class="fmt"><b>${format}</b></span></div><div class="ldl-result-line">📦 Размер: <b>${sz}</b></div><div class="ldl-result-line">📂 Куда: <b>${dest}</b></div>${moneyLine}`;
         $('result_banner').style.display = 'block';
         setPhase('done'); setReadingStatus('✅ Готово'); animateHand('✅');
         updateButtons(); Sound.complete();
@@ -1875,7 +1800,7 @@ ${revHtml}
             isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
         });
         if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.1`);
         try{
             const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
@@ -1920,36 +1845,25 @@ ${revHtml}
         }catch(e){ return null; }
     }
     function saveJsonCheckpoint(){
-        try{
-            localStorage.setItem(`${JSON_CHECKPOINT_KEY}_${state.artId}`, JSON.stringify({
-                downloaded: state.downloaded,
-                ts: Date.now()
-            }));
-        }catch(e){}
+        try{ localStorage.setItem(`${JSON_CHECKPOINT_KEY}_${state.artId}`, JSON.stringify({ downloaded: state.downloaded, ts: Date.now() })); }catch(e){}
     }
-    function clearJsonCheckpoint(){
-        try{ localStorage.removeItem(`${JSON_CHECKPOINT_KEY}_${state.artId}`); }catch(e){}
-    }
+    function clearJsonCheckpoint(){ try{ localStorage.removeItem(`${JSON_CHECKPOINT_KEY}_${state.artId}`); }catch(e){} }
 
     async function jsonDownloadLoop(){
         if(state.isStopped) return;
         if(state.isPaused){ setTimeout(()=>{ if(!state.isPaused && state.isRunning) jsonDownloadLoop(); },1000); return; }
         if(state.total>0 && state.downloaded>=state.total){ await finalizeJsonBook(); return; }
-
         const n = String(state.downloaded).padStart(3,'0');
         setReadingStatus(`📖 Глава ${n}...`);
         animateHand('hover');
         setStatus(`📖 ${state.downloaded}/${state.jsonChapters.length ? state.downloaded : '?'}`);
-
         if(state.downloaded > 0 && state.startTime){
             const elapsed = (Date.now() - state.startTime) / 1000;
             const avg = elapsed / state.downloaded;
             const eta = state.total > 0 ? avg * (state.total - state.downloaded) : 0;
             readingProgressText.textContent = `📖 ${state.downloaded} · ETA ${fmtEta(eta)}`;
         }
-
         const res = await fetchJsonChapter(state.downloaded);
-
         if(res.status === 'notfound'){
             state.jsonNotFoundStreak++;
             logWarn(`Глава ${n}: 404 (${state.jsonNotFoundStreak}/5)`);
@@ -1990,7 +1904,6 @@ ${revHtml}
             Sound.chapterDone();
             if(state.downloaded % 20 === 0) saveJsonCheckpoint();
         }
-
         if(state.downloaded > 2000){ await finalizeJsonBook(); return; }
         state.autoInterval = setTimeout(()=>{
             if(!state.isStopped && !state.isPaused && state.isRunning) jsonDownloadLoop();
@@ -2002,15 +1915,12 @@ ${revHtml}
         setStatus('📦 Финализация...'); Sound.zip();
         zipInfo.style.display = 'inline';
         if(state.skippedChapters.length > 0) logWarn(`Пропущено глав: ${state.skippedChapters.length}`);
-
         let userWantsPrint = false;
         try{ userWantsPrint = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
-
         let imagesMap = new Map();
         try{ imagesMap = await downloadAllBookImages(state.jsonChapters); }
         catch(e){ logWarn(`🖼️ Ошибка: ${e.message}`); }
         if(state.isStopped){ state.isRunning = false; updateButtons(); return; }
-
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
         const totalTextLen = state.jsonChapters.reduce((s,h) => s + (h||'').replace(/<[^>]+>/g,'').length, 0);
         const totalImgCount = imagesMap.size;
@@ -2021,11 +1931,9 @@ ${revHtml}
             if(!state.zip) state.zip = new JSZip();
             const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor }, { forPrint: false });
             state.zip.file(`${safe}.html`, html);
-
             let imgCount = 0;
             for(const [name, blob] of imagesMap){ state.zip.file(`images/${name}`, blob); imgCount++; }
             if(imgCount > 0) addLog(`✅ Картинок в images/: ${imgCount}`, 'db');
-
             addLog('🖼️ Качаем обложку и рецензии...', 'net');
             const packed = await packMetaIntoZip(state.zip, state.artId, {
                 title: state.bookTitle, author: state.bookAuthor,
@@ -2034,15 +1942,13 @@ ${revHtml}
                 isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
             });
             if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-
             state.zip.file('book_info.txt',
                 `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\n` +
                 `Глав: ${chapterCount}\nПропущено: ${state.skippedChapters.length}\nКартинок: ${imgCount}\n` +
                 `Цена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
                 `Формат: HTML (из JSON)\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
-                `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.0`
+                `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.1`
             );
-
             try{
                 const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
                 const zn = `${safe}.zip`;
@@ -2060,16 +1966,13 @@ ${revHtml}
         try{
             const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor }, { forPrint: true });
             const result = await buildPdfViaPrint(html, state.bookTitle, imagesMap);
-
             if(result.ok){
                 setStatus('🖨️ Диалог печати открыт', 'ok');
                 setReadingStatus('🖨️ Сохрани PDF в диалоге печати');
                 addLog('💡 Выбери "Сохранить как PDF" в диалоге', 'step');
-
                 zipInfo.style.display = 'inline';
                 zipInfo.textContent = `🖨️ Сохрани PDF в диалоге`;
                 zipInfo.style.color = '#f0a500';
-
                 state.resultFormat = `🖨️ HTML→PDF (печать)`;
                 state.resultFilename = `${safe}.pdf`;
                 $('result_text').innerHTML = `
@@ -2082,26 +1985,14 @@ ${revHtml}
                 `;
                 $('result_banner').style.display = 'block';
                 setPhase('done'); setReadingStatus('🖨️ PDF через печать'); animateHand('🖨️');
-
-                try{
-                    if(!state.savingsApplied){
-                        SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
-                        pulseSavings();
-                        state.savingsApplied = true;
-                    }
-                }catch(e){}
-
+                try{ if(!state.savingsApplied){ SAVINGS.add(state.artId, state.bookTitle, bookInfo.price); pulseSavings(); state.savingsApplied = true; } }catch(e){}
                 Sound.complete();
                 await saveProgress(true);
                 clearJsonCheckpoint();
                 state.isRunning = false; updateButtons();
                 return;
-            } else {
-                logWarn(`⚠️ Печать не удалась (${result.reason}) → fallback ZIP`);
-            }
-        }catch(e){
-            logWarn(`⚠️ Печать упала: ${e.message} → fallback ZIP`);
-        }
+            } else { logWarn(`⚠️ Печать не удалась (${result.reason}) → fallback ZIP`); }
+        }catch(e){ logWarn(`⚠️ Печать упала: ${e.message} → fallback ZIP`); }
 
         if(!state.zip) state.zip = new JSZip();
         const html2 = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor }, { forPrint: false });
@@ -2143,7 +2034,7 @@ ${revHtml}
             `Страниц: ${bookInfo.pages || '—'}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
             `Формат: PDF\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
             `about.html: ${packed.about ? 'да' : 'нет'}\n` +
-            `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.0`
+            `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v80.1`
         );
         try{
             const zb = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
@@ -2173,12 +2064,11 @@ ${revHtml}
     async function startSmart(){
         if(!state.isReady) return;
         if(state.phase==='done'||state.phase==='error') resetForRepeat();
-
         state.printMode = false;
         try{ state.printMode = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
         console.log(`🖨️ PDF принт при старте: ${state.printMode ? 'ВКЛ' : 'ВЫКЛ'}`);
         console.log(`☁️ Яндекс.Диск: ${YaDisk.enabled ? 'ВКЛ → ' + YaDisk.getTargetFolder() + '/' : 'ВЫКЛ'}`);
-
+        console.log(`💾 Локально: ${isLocalEnabled() ? 'ВКЛ' : 'ВЫКЛ'}`);
         if(state.isRunning && state.isPaused){
             state.isPaused=false; updateButtons(); Sound.click();
             setStatus('▶ Продолжаем...');
@@ -2197,7 +2087,6 @@ ${revHtml}
         state.isStarting = true;
         updateButtons();
         setPhase('starting');
-
         try{
             Sound.start();
             if(!JSZipLoaded){
@@ -2220,25 +2109,19 @@ ${revHtml}
             if(!diag){ setStatus('❌ Диагностика провалилась', 'err'); Sound.error(); return; }
 
             logStep('🎯 Этап 2: Выбор стратегии по приоритету...');
-
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
 
             if(diag.pdf.ok){
                 logStep('📕 PDF — прямой файл (приоритет 1)');
                 state.isRunning = true; updateButtons();
                 bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
-
                 const fnameMatch = diag.pdf.link.match(/fname=([^&]+)/);
                 const pdfFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : `${safe}.pdf`;
-
                 logStep(`📥 PDF через fetch (с прогрессом)...`);
                 setStatus(`📥 Скачиваем PDF...`);
-
                 let blob = null;
-                try{
-                    blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']);
-                }catch(e){ console.warn('fetch упал:', e.message); }
-
+                try{ blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']); }
+                catch(e){ console.warn('fetch упал:', e.message); }
                 if(blob && blob.size > 1024){
                     logOk(`✅ PDF скачан: ${fmtBytes(blob.size)}`);
                     setReadingStatus('📦 Упаковываем PDF в ZIP...');
@@ -2246,7 +2129,6 @@ ${revHtml}
                     await finalizePdfToZip(blob);
                     state.isRunning = false; updateButtons(); return;
                 }
-
                 logWarn('⚠️ fetch не сработал → <a download> (нативно)');
                 const a = document.createElement('a');
                 a.href = diag.pdf.link;
@@ -2267,17 +2149,12 @@ ${revHtml}
                 logStep('📦 ZIP через toc.js (приоритет 2)');
                 state.isRunning = true; updateButtons();
                 bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
-
                 let blob = null;
                 if(!/content\.litres\.ru/i.test(diag.zipToc.link)){
                     logStep('📥 Попытка 1: прямой fetch ZIP...');
-                    try{
-                        blob = await downloadWithProgress(diag.zipToc.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']);
-                    }catch(e){ console.warn('прямой fetch ZIP упал:', e.message); }
-                } else {
-                    logWarn('⚠️ content.litres.ru — fetch CORS режет, идём через 000.js');
-                }
-
+                    try{ blob = await downloadWithProgress(diag.zipToc.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
+                    catch(e){ console.warn('прямой fetch ZIP упал:', e.message); }
+                } else { logWarn('⚠️ content.litres.ru — fetch CORS режет, идём через 000.js'); }
                 if(blob && blob.size > 1024){
                     const fn = `${safe}.zip`;
                     await triggerDownload(blob, fn);
@@ -2287,32 +2164,21 @@ ${revHtml}
                     showResult('📦 ZIP', fn, blob.size);
                     state.isRunning = false; updateButtons(); return;
                 }
-
                 logStep('📥 Попытка 2: 000.js (fetch с прогрессом)...');
                 const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
                 try{
-                    const blob000 = await downloadWithProgress(
-                        chUrl,
-                        { credentials:'include' },
-                        'ZIP',
-                        ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']
-                    );
-
+                    const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
                     if(blob000 && blob000.size > 1024){
                         const info000 = blob000._detected || await detectBlobType(blob000);
                         logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-
                         if(info000.type === 'zip'){
                             try{
                                 const zip = await JSZip.loadAsync(blob000);
                                 const files = Object.keys(zip.files).filter(f => !zip.files[f].dir);
                                 const audioFiles = files.filter(f => /\.(mp3|m4b|m4a|flac|ogg|wav)$/i.test(f));
-                                if(audioFiles.length > 0){
-                                    logOk(`🎵 В ZIP: ${audioFiles.length} аудиофайл(ов)`);
-                                }
+                                if(audioFiles.length > 0) logOk(`🎵 В ZIP: ${audioFiles.length} аудиофайл(ов)`);
                                 logOk(`📦 Файлов в ZIP: ${files.length}`);
                             }catch(e){ logWarn(`⚠️ ZIP прочитать: ${e.message}`); }
-
                             const fn = `${safe}.zip`;
                             await triggerDownload(blob000, fn);
                             zipInfo.style.display='inline';
@@ -2321,19 +2187,10 @@ ${revHtml}
                             showResult('📦 ZIP (из 000.js)', fn, blob000.size);
                             state.isRunning = false; updateButtons(); return;
                         }
-
-                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){
-                            await saveMultimedia(blob000, info000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
-
-                        if(info000.type === 'pdf'){
-                            await finalizePdfToZip(blob000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
+                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
+                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
                     }
                 }catch(e){ console.warn('000.js fetch упал:', e.message); }
-
                 logWarn('⚠️ fetch не сработал → <a download>');
                 const m = diag.zipToc.link.match(/fname=([^&]+)/);
                 const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
@@ -2349,16 +2206,11 @@ ${revHtml}
                 logStep('📦 ZIP напрямую (приоритет 3)');
                 state.isRunning = true; updateButtons();
                 bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
-
                 let blob = null;
                 if(!/content\.litres\.ru/i.test(diag.zipDirect.link)){
-                    try{
-                        blob = await downloadWithProgress(diag.zipDirect.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']);
-                    }catch(e){ console.warn('прямой fetch ZIP direct:', e.message); }
-                } else {
-                    logWarn('⚠️ content.litres.ru — идём через 000.js');
-                }
-
+                    try{ blob = await downloadWithProgress(diag.zipDirect.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
+                    catch(e){ console.warn('прямой fetch ZIP direct:', e.message); }
+                } else { logWarn('⚠️ content.litres.ru — идём через 000.js'); }
                 if(blob && blob.size > 1024){
                     const fn = `${safe}.zip`;
                     await triggerDownload(blob, fn);
@@ -2368,21 +2220,13 @@ ${revHtml}
                     showResult('📦 ZIP', fn, blob.size);
                     state.isRunning = false; updateButtons(); return;
                 }
-
                 logStep('📥 Попытка 2: 000.js (fetch с прогрессом)...');
                 const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
                 try{
-                    const blob000 = await downloadWithProgress(
-                        chUrl,
-                        { credentials:'include' },
-                        'ZIP',
-                        ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']
-                    );
-
+                    const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
                     if(blob000 && blob000.size > 1024){
                         const info000 = blob000._detected || await detectBlobType(blob000);
                         logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-
                         if(info000.type === 'zip'){
                             const fn = `${safe}.zip`;
                             await triggerDownload(blob000, fn);
@@ -2392,17 +2236,10 @@ ${revHtml}
                             showResult('📦 ZIP (из 000.js)', fn, blob000.size);
                             state.isRunning = false; updateButtons(); return;
                         }
-                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){
-                            await saveMultimedia(blob000, info000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
-                        if(info000.type === 'pdf'){
-                            await finalizePdfToZip(blob000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
+                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
+                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
                     }
                 }catch(e){ console.warn('000.js fetch упал:', e.message); }
-
                 logWarn('⚠️ fetch не сработал → <a download>');
                 const m = diag.zipDirect.link.match(/fname=([^&]+)/);
                 const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
@@ -2418,21 +2255,12 @@ ${revHtml}
                 logStep(`${diag.audio.format.icon} ${diag.audio.format.name} — мультимедиа (приоритет 4)`);
                 state.isRunning = true; updateButtons();
                 bookInfo.format = diag.audio.format; bookInfo.isAudio = true; updateFormatDisplay();
-
                 const expected = ['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'];
-
                 logStep(`📥 Попытка 1: прямой fetch ${diag.audio.format.name}...`);
                 let blob = null;
-                try{
-                    blob = await downloadWithProgress(diag.audio.link, { credentials:'omit', mode:'cors' }, diag.audio.format.name, expected);
-                }catch(e){ console.warn('прямой fetch audio:', e.message); }
-
-                if(blob && blob.size > 1024){
-                    const info = blob._detected || diag.audio.format;
-                    await saveMultimedia(blob, info);
-                    state.isRunning = false; updateButtons(); return;
-                }
-
+                try{ blob = await downloadWithProgress(diag.audio.link, { credentials:'omit', mode:'cors' }, diag.audio.format.name, expected); }
+                catch(e){ console.warn('прямой fetch audio:', e.message); }
+                if(blob && blob.size > 1024){ const info = blob._detected || diag.audio.format; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
                 logStep(`📥 Попытка 2: через 000.js (fetch с прогрессом)...`);
                 const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
                 try{
@@ -2440,12 +2268,7 @@ ${revHtml}
                     if(blob000 && blob000.size > 1024){
                         const info000 = blob000._detected || await detectBlobType(blob000);
                         logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-
-                        if(expected.includes(info000.type)){
-                            await saveMultimedia(blob000, info000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
-
+                        if(expected.includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
                         if(info000.type === 'zip'){
                             const fn = `${safe}.zip`;
                             await triggerDownload(blob000, fn);
@@ -2455,14 +2278,9 @@ ${revHtml}
                             showResult('📦 ZIP (аудио внутри)', fn, blob000.size);
                             state.isRunning = false; updateButtons(); return;
                         }
-
-                        if(info000.type === 'pdf'){
-                            await finalizePdfToZip(blob000);
-                            state.isRunning = false; updateButtons(); return;
-                        }
+                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
                     }
                 }catch(e){ console.warn('000.js fetch упал:', e.message); }
-
                 logWarn('⚠️ fetch не сработал → <a download>');
                 const fnameMatch = diag.audio.link.match(/fname=([^&]+)/);
                 const ext = diag.audio.format.name.toLowerCase();
@@ -2478,18 +2296,13 @@ ${revHtml}
             if(diag.json.ok){
                 const jtype = diag.json.type;
                 const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
-
                 logStep(`📥 000.js (тип: ${jtype}) — качаем...`);
-
                 if(jtype === 'pdf'){
                     logStep('📕 000.js — PDF, качаем с прогрессом...');
                     state.isRunning = true; updateButtons();
                     bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
                     const blob = await downloadWithProgress(chUrl, { credentials:'include' }, 'PDF', ['pdf']);
-                    if(blob && blob.size > 1024){
-                        await finalizePdfToZip(blob);
-                        state.isRunning = false; updateButtons(); return;
-                    }
+                    if(blob && blob.size > 1024){ await finalizePdfToZip(blob); state.isRunning = false; updateButtons(); return; }
                     logWarn('⚠️ PDF не скачался');
                 }
                 else if(jtype === 'zip'){
@@ -2520,11 +2333,7 @@ ${revHtml}
                     const fmt = fmtMap[jtype];
                     bookInfo.format = fmt; bookInfo.isAudio = true; updateFormatDisplay();
                     const blob = await downloadWithProgress(chUrl, { credentials:'include' }, fmt.name);
-                    if(blob && blob.size > 1024){
-                        const info = blob._detected || fmt;
-                        await saveMultimedia(blob, info);
-                        state.isRunning = false; updateButtons(); return;
-                    }
+                    if(blob && blob.size > 1024){ const info = blob._detected || fmt; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
                     logWarn('⚠️ Мультимедиа не скачалось');
                 }
                 else if(jtype === 'json' || jtype === 'json-obj' || jtype === 'unknown'){
@@ -2536,26 +2345,20 @@ ${revHtml}
                     state.isRunning=true; state.isPaused=false; state.isStopped=false;
                     state.startPage=0; state.endPage=999; state.zip = new JSZip();
                     state.startTime = Date.now();
-
                     const cp = loadJsonCheckpoint(state.artId);
                     if(cp && cp.downloaded > 0 && cp.downloaded < 2000){
                         if(confirm(`💾 Найден чекпоинт: глава ${cp.downloaded}.\nПродолжить?`)){
                             state.downloaded = cp.downloaded;
                             logStep(`💾 Продолжаем с главы ${cp.downloaded}`);
-                        } else {
-                            clearJsonCheckpoint();
-                        }
+                        } else clearJsonCheckpoint();
                     }
-
                     updateProgress();
                     setStatus('📖 Загрузка глав...');
                     setReadingStatus('📖 Читаем главы...'); animateHand('hover');
                     updateButtons();
                     setTimeout(jsonDownloadLoop, 500); return;
                 }
-                else {
-                    logWarn(`⚠️ 000.js тип "${jtype}" не поддерживается`);
-                }
+                else { logWarn(`⚠️ 000.js тип "${jtype}" не поддерживается`); }
             }
 
             if(diag.pdfjs.ok){
@@ -2606,21 +2409,19 @@ ${revHtml}
     mini.addEventListener('click', () => { state.minimized=false; updateMini(); Sound.click(); });
     $('close_ui').addEventListener('click', () => { stopDownload(); ui.remove(); mini.remove(); });
 
+    // v80.1: сброс позиции
+    $('btn_recenter').addEventListener('click', () => {
+        resetUiPosition(true);
+        try{ Sound.recenter(); }catch(e){}
+        addLog('📍 Окно возвращено в правый нижний угол', 'ok');
+    });
+
     const resultCloseBtn = $('result_close');
-    if(resultCloseBtn){
-        resultCloseBtn.addEventListener('click', () => {
-            $('result_banner').style.display = 'none';
-            Sound.click();
-        });
-    }
+    if(resultCloseBtn) resultCloseBtn.addEventListener('click', () => { $('result_banner').style.display = 'none'; Sound.click(); });
 
     if(btnSavingsReset){
         btnSavingsReset.addEventListener('click', () => {
-            if(confirm('💰 Сбросить счётчик сэкономленных денег?')){
-                SAVINGS.reset();
-                pulseSavings();
-                Sound.warn();
-            }
+            if(confirm('💰 Сбросить счётчик сэкономленных денег?')){ SAVINGS.reset(); pulseSavings(); Sound.warn(); }
         });
     }
 
@@ -2647,7 +2448,6 @@ ${revHtml}
         Sound.click();
         const target = YaDisk.getTargetFolder();
         const currentStatus = YaDisk.token ? '✅ токен есть' : '❌ токена нет';
-
         const choice = prompt(
             `☁️ Яндекс.Диск\n\n` +
             `Токен: ${currentStatus}\n` +
@@ -2661,8 +2461,9 @@ ${revHtml}
             `4 — публиковать ссылки (вкл/выкл)\n` +
             `5 — проверить токен\n` +
             `6 — сбросить токен\n` +
-            `7 — посмотреть структуру папок\n\n` +
-            `Введи цифру 1-7:`,
+            `7 — посмотреть структуру папок\n` +
+            `8 — 💾 локально вкл/выкл (сейчас: ${isLocalEnabled()?'✅ ВКЛ':'❌ ВЫКЛ'})\n\n` +
+            `Введи цифру 1-8:`,
             '1'
         );
 
@@ -2672,20 +2473,13 @@ ${revHtml}
                 await YaDisk.setToken(t);
                 addLog('🔍 Проверяем токен...', 'step');
                 const check = await YaDisk.checkToken();
-                if(check.ok){
-                    logOk(`✅ Токен валиден! Диск: ${fmtBytes(check.usedSpace)} / ${fmtBytes(check.totalSpace)}`);
-                } else {
-                    logErr(`❌ Токен не валиден: ${check.error}`);
-                }
+                if(check.ok) logOk(`✅ Токен валиден! Диск: ${fmtBytes(check.usedSpace)} / ${fmtBytes(check.totalSpace)}`);
+                else logErr(`❌ Токен не валиден: ${check.error}`);
             }
         }
         else if(choice === '2'){
             const f = prompt('📁 Базовая папка на Яндекс.Диске:', YaDisk.baseFolder);
-            if(f && f.trim()){
-                YaDisk.setBaseFolder(f);
-                logOk(`✅ Базовая папка: ${YaDisk.baseFolder}/`);
-                logStep(`Структура: ${YaDisk.getTargetFolder()}/книга.pdf`);
-            }
+            if(f && f.trim()){ YaDisk.setBaseFolder(f); logOk(`✅ Базовая папка: ${YaDisk.baseFolder}/`); logStep(`Структура: ${YaDisk.getTargetFolder()}/книга.pdf`); }
         }
         else if(choice === '3'){
             YaDisk.setUseYearFolders(!YaDisk.useYearFolders);
@@ -2699,49 +2493,39 @@ ${revHtml}
         else if(choice === '5'){
             if(!YaDisk.token){ alert('❌ Сначала введи токен (пункт 1)'); return; }
             const check = await YaDisk.checkToken();
-            if(check.ok){
-                logOk(`✅ Токен ОК. Занято: ${fmtBytes(check.usedSpace)} / ${fmtBytes(check.totalSpace)}`);
-            } else {
-                logErr(`❌ ${check.error}`);
-            }
+            if(check.ok) logOk(`✅ Токен ОК. Занято: ${fmtBytes(check.usedSpace)} / ${fmtBytes(check.totalSpace)}`);
+            else logErr(`❌ ${check.error}`);
         }
         else if(choice === '6'){
-            if(confirm('Сбросить токен Яндекс.Диска?')){
-                localStorage.removeItem(YADISK_TOKEN_KEY);
-                YaDisk.token = '';
-                logWarn('🗑️ Токен сброшен');
-            }
+            if(confirm('Сбросить токен Яндекс.Диска?')){ localStorage.removeItem(YADISK_TOKEN_KEY); YaDisk.token = ''; logWarn('🗑️ Токен сброшен'); }
         }
         else if(choice === '7'){
             if(!YaDisk.token){ alert('❌ Сначала введи токен'); return; }
             addLog('📁 Проверяем структуру папок...', 'step');
-
             const base = YaDisk.baseFolder;
             const target = YaDisk.getTargetFolder();
-
             try{
                 const baseExists = await YaDisk.ensureFolder(base);
                 const targetExists = baseExists ? await YaDisk.ensureFolder(target) : false;
-
                 if(baseExists) logOk(`✅ ${base}/ — существует или создана`);
                 if(targetExists) logOk(`✅ ${target}/ — существует или создана`);
-
                 if(targetExists){
                     const items = await YaDisk.listFolder(target);
                     const files = items.filter(x => x.type === 'file');
                     const folders = items.filter(x => x.type === 'dir');
                     addLog(`📊 В ${target}/: ${files.length} файлов, ${folders.length} подпапок`, 'ok');
-
                     if(files.length > 0){
                         console.log(`📁 Последние файлы в ${target}/:`);
-                        files.slice(0, 10).forEach(f => {
-                            console.log(`   ${f.name} — ${fmtBytes(f.size)} — ${new Date(f.created).toLocaleString('ru-RU')}`);
-                        });
+                        files.slice(0, 10).forEach(f => console.log(`   ${f.name} — ${fmtBytes(f.size)} — ${new Date(f.created).toLocaleString('ru-RU')}`));
                     }
                 }
-            }catch(e){
-                logErr(`❌ Ошибка: ${e.message}`);
-            }
+            }catch(e){ logErr(`❌ Ошибка: ${e.message}`); }
+        }
+        else if(choice === '8'){
+            const now = !isLocalEnabled();
+            try{ localStorage.setItem(LOCAL_MODE_KEY, now ? 'true' : 'false'); }catch(e){}
+            const cb = $('local_mode'); if(cb) cb.checked = now;
+            logOk(now ? '💾 Локально ВКЛ — файлы также в «Загрузки»' : '💾 Локально ВЫКЛ — только Яндекс.Диск');
         }
     });
 
@@ -2759,25 +2543,50 @@ ${revHtml}
             if(this.checked){
                 try{ Sound.cloud(); }catch(e){}
                 addLog(`☁️ Яндекс.Диск ВКЛ → ${YaDisk.getTargetFolder()}/`, 'ok');
-                forceStatus.textContent = '☁️ Диск ON';
-                forceStatus.classList.add('cloud-on');
-                forceStatus.classList.remove('on','print-on');
-            } else {
-                addLog('🖥️ Яндекс.Диск ВЫКЛ — в «Загрузки»', 'ok');
-                forceStatus.textContent = state.forceMode ? '⚡ вкл' : '⏸ выкл';
-                forceStatus.classList.remove('cloud-on','print-on');
-                if(state.forceMode) forceStatus.classList.add('on');
-            }
+            } else addLog('🖥️ Яндекс.Диск ВЫКЛ — в «Загрузки»', 'ok');
+            updateForceStatusBadge();
         });
+    }
+
+    // v80.1: локальный чекбокс
+    const localCheckbox = $('local_mode');
+    if(localCheckbox){
+        localCheckbox.checked = isLocalEnabled();
+        localCheckbox.addEventListener('change', function(){
+            try{ localStorage.setItem(LOCAL_MODE_KEY, this.checked ? 'true' : 'false'); }catch(e){}
+            Sound.click();
+            if(this.checked){
+                try{ Sound.local(); }catch(e){}
+                addLog('💾 Локально ВКЛ — файлы сохраняются в «Загрузки»' + (YaDisk.enabled && YaDisk.token ? ' (дублируются с Диском)' : ''), 'ok');
+            } else {
+                addLog('💾 Локально ВЫКЛ' + (YaDisk.enabled && YaDisk.token ? ' — только Яндекс.Диск' : ' — fallback в «Загрузки» при выкл. Диске'), 'ok');
+            }
+            updateForceStatusBadge();
+        });
+    }
+
+    function updateForceStatusBadge(){
+        const fs = $('force_status');
+        if(!fs) return;
+        fs.className = 'ldl-force-status';
+        const y = YaDisk.enabled && YaDisk.token;
+        const l = isLocalEnabled();
+        const parts = [];
+        if(state.forceMode){ parts.push('⚡'); fs.classList.add('on'); }
+        if(y){ parts.push('☁️'); fs.classList.add('cloud-on'); }
+        if(l){ parts.push('💾'); fs.classList.add('local-on'); }
+        fs.textContent = parts.length ? parts.join(' ') + ' вкл' : '⏸ выкл';
     }
 
     try{ $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY)==='true'; }catch(e){}
     $('autostart_mode').addEventListener('change', function(){ try{ localStorage.setItem(AUTOSTART_KEY, this.checked?'true':'false'); }catch(e){} Sound.click(); addLog(this.checked?'🚀 Автостарт ВКЛ':'🚀 Автостарт ВЫКЛ', 'ok'); });
 
     window.downloaderUI = {
-        version: 'v80.0',
+        version: 'v80.1',
         start: startSmart, stop: stopDownload, state, Sound, addLog, SAVINGS, formatPrice,
         YaDisk,
+        isLocalEnabled,
+        resetUiPosition, clampUiPosition,
         diagnoseStrategies,
         checkStrategy_Pdf, checkStrategy_ZipToc, checkStrategy_ZipDirect,
         checkStrategy_Audio, checkStrategy_000js, checkStrategy_Pdfjs,
@@ -2795,12 +2604,10 @@ ${revHtml}
     async function init(){
         SAVINGS.load();
         updateSavingsDisplay();
-
         setStatus('⏳ Загрузка...');
         addLog(`🔍 Тип: ${pageType}`);
         updateMini(); updateButtons();
         previewBookTitle.textContent = '⏳ Загрузка...';
-
         const ok = await fetchBookInfo();
         if(ok){
             previewBookTitle.textContent = bookInfo.title;
@@ -2809,18 +2616,11 @@ ${revHtml}
             updatePriceDisplay();
             state.bookTitle = bookInfo.title; state.bookAuthor = bookInfo.author;
             state.totalPages = bookInfo.pages; state.bookInfoLoaded = true;
-            if(bookInfo.fileId){
-                state.fileId = bookInfo.fileId;
-                fileId = bookInfo.fileId;
-                console.log(`✅ fileId = ${state.fileId}`);
-            } else {
-                addLog(`⚠️ fileId не найден`, 'warn');
-            }
+            if(bookInfo.fileId){ state.fileId = bookInfo.fileId; fileId = bookInfo.fileId; console.log(`✅ fileId = ${state.fileId}`); }
+            else addLog(`⚠️ fileId не найден`, 'warn');
             addLog(`✅ ${bookInfo.pages} ${bookInfo.isAudio?'сек':'стр.'}${bookInfo.price ? ' · '+formatPrice(bookInfo.price) : ''}`, 'ok');
             if(bookInfo.format){ updateFormatDisplay(); logStep(`Формат: ${bookInfo.format.icon} ${bookInfo.format.name}${bookInfo.isAudio?' 🎧':''}`); }
-        } else {
-            setStatus('⚠️ Не удалось загрузить книгу', 'err');
-        }
+        } else setStatus('⚠️ Не удалось загрузить книгу', 'err');
 
         setTimeout(async () => {
             const u = await fetchUserInfo();
@@ -2828,7 +2628,7 @@ ${revHtml}
                 let h = `<div>👤 <b>${u.id}</b>${u.login?' • '+u.login:''}</div>`;
                 if(u.email) h += `<div style="font-size:10px;">📧 ${u.email} ${u.isEmailConfirmed?'✅':'⚠️'}</div>`;
                 userInfoText.innerHTML = h;
-            } else { userInfoText.innerHTML = '<div>⚠️ Нет данных</div>'; }
+            } else userInfoText.innerHTML = '<div>⚠️ Нет данных</div>';
         }, 300);
 
         state.isReady = true;
@@ -2837,13 +2637,12 @@ ${revHtml}
         animateHand('🖐️');
         updateButtons();
         updateTabTitle();
-        console.log('%c✅ LitRes Downloader v80.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        updateForceStatusBadge();
+        console.log('%c✅ LitRes Downloader v80.1 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
         console.log(`%c💰 Сэкономлено: ${formatPrice(SAVINGS.total)} (${SAVINGS.books} книг)`, 'color:#2ecc71;font-weight:bold;');
-        if(YaDisk.token){
-            console.log(`%c☁️ Яндекс.Диск: ${YaDisk.getTargetFolder()}/`, 'color:#fc3f1d;font-weight:bold;');
-        } else {
-            console.log('%c☁️ Яндекс.Диск: нажми ☁️ в шапке чтобы настроить', 'color:#fc3f1d;font-weight:bold;');
-        }
+        console.log(`%c💾 Локально: ${isLocalEnabled() ? 'ВКЛ' : 'ВЫКЛ'}`, 'color:#2ecc71;font-weight:bold;');
+        if(YaDisk.token) console.log(`%c☁️ Яндекс.Диск: ${YaDisk.getTargetFolder()}/`, 'color:#fc3f1d;font-weight:bold;');
+        else console.log('%c☁️ Яндекс.Диск: нажми ☁️ в шапке чтобы настроить', 'color:#fc3f1d;font-weight:bold;');
     }
 
     let currentArtId = artId;
