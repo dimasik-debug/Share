@@ -1055,177 +1055,98 @@ ${revHtml}
         return pdfBlob;
     }
 
-   // ============================================================
-// buildPdfFromHtml — HTML → canvas → PDF (С ТЕКСТОМ)
-// v63.1 (2026-09-15): ФИКС — рендерим чанками по 15000px.
-//   Браузеры ограничивают canvas по высоте (Chrome 32767, Safari 16384).
-//   Один гигантский canvas на всю книгу давал пустые страницы.
-//   Теперь: режем на чанки и рендерим каждый отдельно.
 // ============================================================
-async function buildPdfFromHtml(htmlContent, title='Книга'){
-    if(!HTML2CANVASLoaded){
-        await new Promise(res => {
-            const c = setInterval(() => { if(HTML2CANVASLoaded){ clearInterval(c); res(); } }, 200);
-            setTimeout(() => { clearInterval(c); res(); }, 8000);
-        });
-    }
-    if(!HTML2CANVASLoaded || !window.html2canvas) throw new Error('html2canvas не загрузился');
-    if(!JSPDFLoaded) throw new Error('jsPDF не загрузился');
-
-    addLog(`📄 Рендерим HTML в canvas (${Math.round(htmlContent.length/1000)}K симв)...`, 'step');
+// printHtmlAsPdf — HTML → печать → PDF (НАСТОЯЩИЙ, с текстом)
+// v64.0 (2026-09-15): в браузере через window.print().
+//   Текст копируемый, размер ~200KB, картинки на своих местах.
+//   Пользователь выбирает "Сохранить как PDF" в диалоге печати.
+// ============================================================
+async function printHtmlAsPdf(htmlContent, title='Книга', imagesMap=null){
+    addLog(`🖨️ Готовим HTML к печати (${Math.round(htmlContent.length/1000)}K симв)...`, 'step');
     try{ Sound.pdf(); }catch(e){}
 
-    // Создаём скрытый контейнер с A4-пропорциями
-    const container = document.createElement('div');
-    container.style.cssText = `
-        position:fixed;
-        left:-99999px;
-        top:0;
-        width:794px;
-        background:#ffffff;
-        color:#000000;
-        font-family:Georgia,'Times New Roman',serif;
-        font-size:16px;
-        line-height:1.65;
-        padding:50px 60px;
-        box-sizing:border-box;
-    `;
-    container.innerHTML = htmlContent;
-    document.body.appendChild(container);
+    let html = htmlContent;
 
-    try{
-        // Ждём все картинки
-        const imgs = [...container.querySelectorAll('img')];
-        addLog(`📄 Ждём ${imgs.length} картинок...`, 'info');
-        await Promise.all(imgs.map(img => new Promise(res => {
-            if(img.complete) return res();
-            img.onload = res;
-            img.onerror = res;
-            setTimeout(res, 5000);
-        })));
-
-        // Измеряем полную высоту контента
-        const totalHeight = container.scrollHeight;
-        addLog(`📄 Общая высота: ${totalHeight}px`, 'info');
-
-        // 🎯 v63.1: безопасный размер чанка (< Safari лимита 16384)
-        const MAX_CHUNK = 14000;
-        const chunksCount = Math.ceil(totalHeight / MAX_CHUNK);
-        addLog(`📄 Разбиваем на ${chunksCount} чанков по ${MAX_CHUNK}px`, 'info');
-
-        const { jsPDF } = window.jspdf;
-        const A4_W = 794;
-        const A4_H = 1123;
-
-        let pdf = null;
-        let globalPageNum = 0;
-
-        for(let c = 0; c < chunksCount; c++){
-            if(state.isStopped) throw new Error('остановлено пользователем');
-
-            const offsetY = c * MAX_CHUNK;
-            const chunkHeight = Math.min(MAX_CHUNK, totalHeight - offsetY);
-
-            // 🎯 v63.1: рендерим только нужный кусок
-            let canvas;
-            try{
-                canvas = await window.html2canvas(container, {
-                    scale: 1.5,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                    x: 0,
-                    y: offsetY,
-                    width: 794,
-                    height: chunkHeight,
-                    windowWidth: 794,
-                    windowHeight: chunkHeight,
-                    scrollX: 0,
-                    scrollY: 0
-                });
-            }catch(e){
-                addLog(`⚠️ Чанк ${c+1}: ${e.message} → пробуем с scale 1`, 'warn');
-                canvas = await window.html2canvas(container, {
-                    scale: 1,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                    x: 0,
-                    y: offsetY,
-                    width: 794,
-                    height: chunkHeight,
-                    windowWidth: 794,
-                    windowHeight: chunkHeight
-                });
-            }
-
-            if(c === 0){
-                addLog(`📄 Canvas чанка: ${canvas.width}×${canvas.height}px`, 'info');
-            }
-
-            // Сколько A4-страниц в этом чанке
-            const canvasScale = canvas.width / A4_W;
-            const pageHeightInCanvasPx = Math.round(A4_H * canvasScale);
-            const pagesInChunk = Math.max(1, Math.ceil(canvas.height / pageHeightInCanvasPx));
-
-            for(let p = 0; p < pagesInChunk; p++){
-                if(state.isStopped) throw new Error('остановлено пользователем');
-
-                const srcY = p * pageHeightInCanvasPx;
-                const srcH = Math.min(pageHeightInCanvasPx, canvas.height - srcY);
-
-                const pageCanvas = document.createElement('canvas');
-                pageCanvas.width = canvas.width;
-                pageCanvas.height = pageHeightInCanvasPx;
-                const ctx = pageCanvas.getContext('2d');
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-                ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-
-                const dataUrl = pageCanvas.toDataURL('image/jpeg', 0.82);
-
-                if(globalPageNum === 0){
-                    pdf = new jsPDF({ orientation:'p', unit:'px', format:[A4_W, A4_H], hotfixes:['px_scaling'] });
-                } else {
-                    pdf.addPage([A4_W, A4_H], 'p');
-                }
-                pdf.addImage(dataUrl, 'JPEG', 0, 0, A4_W, A4_H);
-                globalPageNum++;
-
-                // Освобождаем память
-                pageCanvas.width = 0;
-                pageCanvas.height = 0;
-
-                // Прогресс
-                const chunkPct = (c / chunksCount) * 100;
-                const pagePct = (p / pagesInChunk) * (100 / chunksCount);
-                const pct = Math.min(99, Math.round(chunkPct + pagePct));
-                setReadingStatus(`📄 PDF: чанк ${c+1}/${chunksCount}, стр. ${globalPageNum}`);
-                readingProgressText.textContent = `📄 Готово страниц: ${globalPageNum}`;
-                progressBar.style.width = `${pct}%`;
-                percentText.textContent = `${pct}%`;
-                updateMini();
-            }
-
-            // Освобождаем большой canvas
-            canvas.width = 0;
-            canvas.height = 0;
-
-            // Небольшая пауза между чанками чтобы браузер освободил память
-            await new Promise(r => setTimeout(r, 100));
+    // Подменяем src картинок на blob URL
+    if(imagesMap && imagesMap.size > 0){
+        const urlMap = new Map();
+        for(const [name, blob] of imagesMap){
+            const objUrl = URL.createObjectURL(blob);
+            urlMap.set(name, objUrl);
         }
-
-        addLog(`✅ PDF собран: ${globalPageNum} стр.`, 'ok');
-        const pdfBlob = pdf.output('blob');
-        return pdfBlob;
-    } finally {
-        container.remove();
+        for(const [name, objUrl] of urlMap){
+            html = html.split(`src="${name}"`).join(`src="${objUrl}"`);
+        }
+        addLog(`🖨️ Подставлено ${urlMap.size} картинок`, 'info');
     }
+
+    // Добавляем print-стили для A4
+    const printCss = `
+        @media print {
+            @page { size: A4; margin: 20mm 15mm; }
+            body { margin: 0 !important; padding: 0 !important; max-width: 100% !important; background: #fff !important; }
+            h1.book-title { page-break-before: avoid; }
+            h2 { page-break-before: always; page-break-after: avoid; }
+            h2:first-of-type { page-break-before: avoid; }
+            h3 { page-break-after: avoid; }
+            p { orphans: 3; widows: 3; }
+            img.litres-img { page-break-inside: avoid; max-width: 100%; height: auto; }
+            .meta, .footer { display: none; }
+        }
+    `;
+    html = html.replace('</style>', printCss + '</style>');
+    html = html.replace('<title>', `<title>${escHtml(title)}</title><title>`);
+
+    // Создаём скрытый iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:210mm;height:297mm;border:none;visibility:hidden;';
+    document.body.appendChild(iframe);
+
+    return new Promise((resolve, reject) => {
+        iframe.onload = async () => {
+            try{
+                const idoc = iframe.contentWindow.document;
+
+                // Ждём загрузки всех картинок внутри iframe
+                const imgs = [...idoc.querySelectorAll('img')];
+                addLog(`🖨️ Ждём ${imgs.length} картинок в iframe...`, 'info');
+                await Promise.all(imgs.map(img => new Promise(res => {
+                    if(img.complete) return res();
+                    img.onload = res;
+                    img.onerror = res;
+                    setTimeout(res, 3000);
+                })));
+                await new Promise(res => setTimeout(res, 500));
+
+                addLog(`🖨️ Открываем диалог печати → выбери "Сохранить как PDF"`, 'step');
+                setReadingStatus('🖨️ Сохрани как PDF в диалоге');
+
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+
+                addLog(`💡 В диалоге выбери принтер "Сохранить как PDF"`, 'info');
+
+                // Удаляем через 60 сек
+                setTimeout(() => {
+                    try{ iframe.remove(); }catch(e){}
+                }, 60000);
+
+                resolve({ ok:true, method:'print' });
+            }catch(e){
+                console.error('❌ printHtmlAsPdf:', e);
+                try{ iframe.remove(); }catch(_){}
+                reject(e);
+            }
+        };
+
+        const idoc = iframe.contentWindow.document;
+        idoc.open();
+        idoc.write(html);
+        idoc.close();
+    });
 }
 // ============================================================
-// КОНЕЦ buildPdfFromHtml v63.1 (2026-09-15)
+// КОНЕЦ printHtmlAsPdf v64.0 (2026-09-15)
 // ============================================================
 
     // ============================================================
@@ -1791,30 +1712,36 @@ async function buildPdfFromHtml(htmlContent, title='Книга'){
             }catch(e){ logWarn(`⚠️ PDF не собрался: ${e.message} → fallback ZIP`); }
         }
 
-        // 📄 РЕЖИМ 2: текстовая книга → HTML → PDF (С ТЕКСТОМ!)
-        if(userWantsPdf && !isImageOnlyBook && totalTextLen > 3000 && JSPDFLoaded && HTML2CANVASLoaded){
-            logStep(`📄 Текстовая книга (${Math.round(totalTextLen/1000)}K симв) → PDF (HTML→canvas)`);
+            // 📄 РЕЖИМ 2: текстовая книга → печать в PDF (настоящий, с текстом!)
+        if(userWantsPdf && !isImageOnlyBook && totalTextLen > 3000){
+            logStep(`📄 Текстовая книга (${Math.round(totalTextLen/1000)}K симв) → PDF через печать`);
             try{
                 const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor });
-                // Подменяем src картинок на dataURL (чтобы html2canvas видел их в PDF)
-                let htmlWithImages = html;
-                // Просто заменим src на blob URL картинок из imagesMap (браузер увидит)
-                for(const [name, blob] of imagesMap){
-                    const objUrl = URL.createObjectURL(blob);
-                    htmlWithImages = htmlWithImages.split(`src="${name}"`).join(`src="${objUrl}"`);
+                setStatus('🖨️ Готовим PDF к печати...', 'step');
+                await printHtmlAsPdf(html, state.bookTitle, imagesMap);
+
+                // Баннер
+                $('result_text').innerHTML = `
+                    <div class="ldl-result-line">🖨️ <b>Диалог печати открыт</b></div>
+                    <div class="ldl-result-line">📄 Формат: <span class="fmt"><b>PDF (с текстом!)</b></span></div>
+                    <div class="ldl-result-line">💡 В диалоге выбери: <b>Принтер → Сохранить как PDF</b></div>
+                    <div style="margin-top:6px;font-size:10px;color:rgba(255,255,255,.5);">Текст копируется, картинки на местах, размер ~200-500 KB</div>
+                `;
+                $('result_banner').style.display = 'block';
+                setPhase('done'); setReadingStatus('✅ PDF в диалоге печати'); animateHand('✅');
+                updateButtons(); Sound.complete();
+
+                if(!state.savingsApplied && bookInfo.price > 0){
+                    SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
+                    state.savingsApplied = true;
+                    pulseSavings();
                 }
-                const pdfBlob = await buildPdfFromHtml(htmlWithImages, state.bookTitle);
-                // Освобождаем blob URLs
-                // (не обязательно — браузер сам подчистит)
-                const fn = `${safe}.pdf`;
-                triggerDownload(pdfBlob, fn);
-                zipInfo.textContent = `✅ ${fn} (${(pdfBlob.size/1048576).toFixed(2)} MB)`;
-                zipInfo.style.color = '#4a8af4';
-                showResult(`📄 PDF (${Math.round(totalTextLen/1000)}K симв текста)`, fn, pdfBlob.size);
                 await saveProgress(true);
                 state.isRunning = false; updateButtons();
                 return;
-            }catch(e){ logWarn(`⚠️ HTML→PDF не собрался: ${e.message} → fallback ZIP`); }
+            }catch(e){
+                logWarn(`⚠️ Печать не сработала: ${e.message} → fallback ZIP`);
+            }
         }
 
         // 📦 РЕЖИМ 3: ZIP с HTML + картинками
