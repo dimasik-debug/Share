@@ -408,11 +408,10 @@
     }
 
     // ═══ downloadWithProgress — валидация Range ═══
+    
     async function downloadWithProgress(url, opts={}, label='файла', expectedTypes=null){
-        if(/^https?:\/\/content\.litres\.ru\//i.test(url)){
-            addLog(`🚫 ${label}: content.litres.ru — CORS блокирует fetch`, 'warn');
-            return null;
-        }
+    
+        
         const MAX_ATTEMPTS = 100;
         const chunks = [];
         let loaded = 0, total = 0, attempt = 0, consecutiveShortFails = 0;
