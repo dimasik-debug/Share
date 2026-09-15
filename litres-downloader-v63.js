@@ -644,39 +644,96 @@
         return r;
     }
 
-    // ============================================================
-    // checkStrategy_Json — JSON-главы (000.js Range-проверка)
-    // ============================================================
-    async function checkStrategy_Json(fid){
-        const r = { ok:false, link:null, note:'', name:'📖 JSON (главы)', type:null };
+ // ============================================================
+// checkStrategy_Json — JSON-главы (000.js Range-проверка)
+// v62.1 (2026-09-15): ФИКС — Range может вернуть пустой ответ.
+//   Если fetch прошёл (200/206), значит 000.js существует,
+//   и это точно JSON (эндпоинт /json/000.js). Не пугаемся.
+// ============================================================
+async function checkStrategy_Json(fid){
+    const r = { ok:false, link:null, note:'', name:'📖 JSON (главы)', type:null };
+    try{
+        const chUrl = `https://www.litres.ru/download_book_subscr/${artId}/${fid}/json/000.js`;
+
+        let rHead;
         try{
-            const chUrl = `https://www.litres.ru/download_book_subscr/${artId}/${fid}/json/000.js`;
-            const resp = await fetchWithTimeout(chUrl, {
+            rHead = await fetchWithTimeout(chUrl, {
                 credentials:'include',
                 headers:{ 'Range':'bytes=0-15' }
             }, 4000);
-            if(resp.status === 403 || resp.status === 401){ r.note = `HTTP ${resp.status}`; return r; }
-            if(!resp.ok && resp.status !== 206){ r.note = `HTTP ${resp.status}`; return r; }
-            const buf = await resp.arrayBuffer();
-            const head = new Uint8Array(buf);
-            const hex = Array.from(head.slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
-            const str = (s,l) => String.fromCharCode(...head.slice(s,s+l));
-            let type = 'unknown';
-            if(str(0,5)==='%PDF-') type = 'pdf';
-            else if(str(0,3)==='ID3') type = 'audio-mp3';
-            else if(str(0,4)==='fLaC') type = 'audio-flac';
-            else if(str(0,4)==='OggS') type = 'audio-ogg';
-            else if(str(4,4)==='ftyp') type = 'audio-m4a';
-            else if(head[0]===0x1A && head[1]===0x45) type = 'video-webm';
-            else if(str(0,1)==='[') type = 'json';
-            else if(str(0,1)==='{') type = 'json-obj';
-            else if(head[0]===0xFF && (head[1]&0xE0)===0xE0) type = 'audio-mp3';
-            else if(head[0]===0x50 && head[1]===0x4B) type = 'zip';
-            r.ok = true; r.type = type; r.link = chUrl;
-            r.note = `${type} [${hex}]`;
-        }catch(e){ r.note = e.message; }
-        return r;
+        }catch(e){
+            // Range упал — пробуем обычный GET
+            console.log('⚠️ Range упал, пробуем GET:', e.message);
+            rHead = await fetchWithTimeout(chUrl, { credentials:'include' }, 5000);
+        }
+
+        if(rHead.status === 403 || rHead.status === 401){
+            r.note = `HTTP ${rHead.status}`;
+            return r;
+        }
+        if(rHead.status === 404){
+            r.note = 'HTTP 404';
+            return r;
+        }
+        if(!rHead.ok && rHead.status !== 206){
+            r.note = `HTTP ${rHead.status}`;
+            return r;
+        }
+
+        // Пробуем прочитать байты
+        let head;
+        try{
+            const buf = await rHead.arrayBuffer();
+            head = new Uint8Array(buf);
+            console.log(`🔍 checkStrategy_Json: получено ${head.length} байт`);
+        }catch(e){
+            head = new Uint8Array(0);
+            console.log('⚠️ arrayBuffer упал:', e.message);
+        }
+
+        // 🎯 v62.1: если пусто — всё равно считаем JSON доступным,
+        //   потому что 000.js существует (200/206). Эндпоинт /json/ —
+        //   всегда JSON по определению.
+        if(!head || head.length === 0){
+            r.ok = true;
+            r.type = 'json';
+            r.link = chUrl;
+            r.note = 'файл существует (Range пустой)';
+            console.log('✅ checkStrategy_Json: 000.js существует → JSON');
+            return r;
+        }
+
+        const hex = Array.from(head.slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+        const str = (s,l) => String.fromCharCode(...head.slice(s,s+l));
+        let type = 'unknown';
+        if(str(0,5)==='%PDF-') type = 'pdf';
+        else if(str(0,3)==='ID3') type = 'audio-mp3';
+        else if(str(0,4)==='fLaC') type = 'audio-flac';
+        else if(str(0,4)==='OggS') type = 'audio-ogg';
+        else if(str(4,4)==='ftyp') type = 'audio-m4a';
+        else if(head[0]===0x1A && head[1]===0x45) type = 'video-webm';
+        else if(str(0,1)==='[') type = 'json';
+        else if(str(0,1)==='{') type = 'json-obj';
+        else if(head[0]===0xFF && (head[1]&0xE0)===0xE0) type = 'audio-mp3';
+        else if(head[0]===0x50 && head[1]===0x4B) type = 'zip';
+
+        // 🎯 v62.1: если сигнатура не распозналась — всё равно JSON
+        if(type === 'unknown'){
+            console.log(`🔍 checkStrategy_Json: сигнатура не распозналась [${hex}] → считаем JSON`);
+            type = 'json';
+        }
+
+        r.ok = true; r.type = type; r.link = chUrl;
+        r.note = `${type} [${hex}]`;
+    }catch(e){
+        r.note = e.message;
+        console.log('❌ checkStrategy_Json:', e);
     }
+    return r;
+}
+// ============================================================
+// КОНЕЦ checkStrategy_Json v62.1 (2026-09-15)
+// ============================================================
 
     // ============================================================
     // diagnoseStrategies — ГЛАВНАЯ диагностика
@@ -1924,7 +1981,8 @@ ${revHtml}
             if(diag.json.ok){
                 const jtype = diag.json.type;
                 logStep(`📖 JSON главы (тип: ${jtype}) — приоритет 5`);
-                if(jtype === 'json' || jtype === 'json-obj'){
+                // 🎯 v62.1: принимаем unknown тоже — это точно JSON-эндпоинт
+                if(jtype === 'json' || jtype === 'json-obj' || jtype === 'unknown'){
                     bookInfo.format = { icon:'📖', name:'FB2' }; updateFormatDisplay();
                     state.mode = 'json';
                     state.jsonChapters=[]; state.jsonEmptyStreak=0; state.jsonNotFoundStreak=0; state.jsonErrorStreak=0; state.skippedChapters=[];
@@ -1938,7 +1996,7 @@ ${revHtml}
                     setTimeout(jsonDownloadLoop, 500); return;
                 }
                 logWarn(`JSON тип "${jtype}" не поддерживается`);
-            }
+                        }
 
             // 6️⃣ JPG/GIF постранично (PDFjs)
             if(diag.pdfjs.ok){
