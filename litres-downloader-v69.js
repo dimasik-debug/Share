@@ -1055,120 +1055,178 @@ ${revHtml}
         return pdfBlob;
     }
 
-    // ============================================================
-    // buildPdfFromHtml — НОВОЕ в v63: HTML → canvas → PDF (С ТЕКСТОМ)
-    //   Рендерит HTML в скрытый div, html2canvas → большой canvas,
-    //   режет на A4-страницы, каждую страницу добавляет в PDF.
-    // ============================================================
-    async function buildPdfFromHtml(htmlContent, title='Книга'){
-        if(!HTML2CANVASLoaded){
-            await new Promise(res => {
-                const c = setInterval(() => { if(HTML2CANVASLoaded){ clearInterval(c); res(); } }, 200);
-                setTimeout(() => { clearInterval(c); res(); }, 8000);
-            });
-        }
-        if(!HTML2CANVASLoaded || !window.html2canvas) throw new Error('html2canvas не загрузился');
-        if(!JSPDFLoaded) throw new Error('jsPDF не загрузился');
+  // ============================================================
+// buildPdfFromHtml — HTML → canvas → PDF (С ТЕКСТОМ)
+// v63.1 (2026-09-15): ФИКС — рендерим чанками по 15000px.
+//   Браузеры ограничивают canvas по высоте (Chrome 32767, Safari 16384).
+//   Один гигантский canvas на всю книгу давал пустые страницы.
+//   Теперь: режем на чанки и рендерим каждый отдельно.
+// ============================================================
+async function buildPdfFromHtml(htmlContent, title='Книга'){
+    if(!HTML2CANVASLoaded){
+        await new Promise(res => {
+            const c = setInterval(() => { if(HTML2CANVASLoaded){ clearInterval(c); res(); } }, 200);
+            setTimeout(() => { clearInterval(c); res(); }, 8000);
+        });
+    }
+    if(!HTML2CANVASLoaded || !window.html2canvas) throw new Error('html2canvas не загрузился');
+    if(!JSPDFLoaded) throw new Error('jsPDF не загрузился');
 
-        addLog(`📄 Рендерим HTML в canvas (${Math.round(htmlContent.length/1000)}K симв)...`, 'step');
-        try{ Sound.pdf(); }catch(e){}
+    addLog(`📄 Рендерим HTML в canvas (${Math.round(htmlContent.length/1000)}K симв)...`, 'step');
+    try{ Sound.pdf(); }catch(e){}
 
-        // Создаём скрытый контейнер с A4-пропорциями
-        const container = document.createElement('div');
-        container.style.cssText = `
-            position:fixed;
-            left:-99999px;
-            top:0;
-            width:794px;
-            background:#ffffff;
-            color:#000000;
-            font-family:Georgia,'Times New Roman',serif;
-            font-size:16px;
-            line-height:1.65;
-            padding:50px 60px;
-            box-sizing:border-box;
-        `;
-        container.innerHTML = htmlContent;
-        document.body.appendChild(container);
+    // Создаём скрытый контейнер с A4-пропорциями
+    const container = document.createElement('div');
+    container.style.cssText = `
+        position:fixed;
+        left:-99999px;
+        top:0;
+        width:794px;
+        background:#ffffff;
+        color:#000000;
+        font-family:Georgia,'Times New Roman',serif;
+        font-size:16px;
+        line-height:1.65;
+        padding:50px 60px;
+        box-sizing:border-box;
+    `;
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
 
-        try{
-            // Ждём загрузки всех картинок внутри контейнера
-            const imgs = [...container.querySelectorAll('img')];
-            addLog(`📄 Ждём ${imgs.length} картинок...`, 'info');
-            await Promise.all(imgs.map(img => new Promise(res => {
-                if(img.complete) return res();
-                img.onload = res;
-                img.onerror = res;
-                setTimeout(res, 5000);
-            })));
+    try{
+        // Ждём все картинки
+        const imgs = [...container.querySelectorAll('img')];
+        addLog(`📄 Ждём ${imgs.length} картинок...`, 'info');
+        await Promise.all(imgs.map(img => new Promise(res => {
+            if(img.complete) return res();
+            img.onload = res;
+            img.onerror = res;
+            setTimeout(res, 5000);
+        })));
 
-            setReadingStatus('📄 Рендерим страницы...');
+        // Измеряем полную высоту контента
+        const totalHeight = container.scrollHeight;
+        addLog(`📄 Общая высота: ${totalHeight}px`, 'info');
 
-            // Рендерим весь контейнер в canvas
-            const canvas = await window.html2canvas(container, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                windowWidth: 794
-            });
+        // 🎯 v63.1: безопасный размер чанка (< Safari лимита 16384)
+        const MAX_CHUNK = 14000;
+        const chunksCount = Math.ceil(totalHeight / MAX_CHUNK);
+        addLog(`📄 Разбиваем на ${chunksCount} чанков по ${MAX_CHUNK}px`, 'info');
 
-            addLog(`📄 Canvas: ${canvas.width}×${canvas.height}px`, 'info');
+        const { jsPDF } = window.jspdf;
+        const A4_W = 794;
+        const A4_H = 1123;
 
-            // A4 ratio ≈ 1.414
-            const pageRatio = 1123 / 794;
-            const pageWidthCanvasPx = canvas.width;
-            const pageHeightCanvasPx = Math.round(canvas.width * pageRatio);
+        let pdf = null;
+        let globalPageNum = 0;
 
-            const pagesCount = Math.ceil(canvas.height / pageHeightCanvasPx);
-            addLog(`📄 Страниц: ${pagesCount}`, 'info');
+        for(let c = 0; c < chunksCount; c++){
+            if(state.isStopped) throw new Error('остановлено пользователем');
 
-            const { jsPDF } = window.jspdf;
-            let pdf = new jsPDF({ orientation:'p', unit:'px', format:[794, 1123], hotfixes:['px_scaling'] });
+            const offsetY = c * MAX_CHUNK;
+            const chunkHeight = Math.min(MAX_CHUNK, totalHeight - offsetY);
 
-            for(let i = 0; i < pagesCount; i++){
-                if(state.isStopped) throw new Error('остановлено');
+            // 🎯 v63.1: рендерим только нужный кусок
+            let canvas;
+            try{
+                canvas = await window.html2canvas(container, {
+                    scale: 1.5,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    x: 0,
+                    y: offsetY,
+                    width: 794,
+                    height: chunkHeight,
+                    windowWidth: 794,
+                    windowHeight: chunkHeight,
+                    scrollX: 0,
+                    scrollY: 0
+                });
+            }catch(e){
+                addLog(`⚠️ Чанк ${c+1}: ${e.message} → пробуем с scale 1`, 'warn');
+                canvas = await window.html2canvas(container, {
+                    scale: 1,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    x: 0,
+                    y: offsetY,
+                    width: 794,
+                    height: chunkHeight,
+                    windowWidth: 794,
+                    windowHeight: chunkHeight
+                });
+            }
 
-                const srcY = i * pageHeightCanvasPx;
-                const srcH = Math.min(pageHeightCanvasPx, canvas.height - srcY);
+            if(c === 0){
+                addLog(`📄 Canvas чанка: ${canvas.width}×${canvas.height}px`, 'info');
+            }
+
+            // Сколько A4-страниц в этом чанке
+            const canvasScale = canvas.width / A4_W;
+            const pageHeightInCanvasPx = Math.round(A4_H * canvasScale);
+            const pagesInChunk = Math.max(1, Math.ceil(canvas.height / pageHeightInCanvasPx));
+
+            for(let p = 0; p < pagesInChunk; p++){
+                if(state.isStopped) throw new Error('остановлено пользователем');
+
+                const srcY = p * pageHeightInCanvasPx;
+                const srcH = Math.min(pageHeightInCanvasPx, canvas.height - srcY);
 
                 const pageCanvas = document.createElement('canvas');
-                pageCanvas.width = pageWidthCanvasPx;
-                pageCanvas.height = pageHeightCanvasPx;
+                pageCanvas.width = canvas.width;
+                pageCanvas.height = pageHeightInCanvasPx;
                 const ctx = pageCanvas.getContext('2d');
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-                ctx.drawImage(canvas, 0, srcY, pageWidthCanvasPx, srcH, 0, 0, pageWidthCanvasPx, srcH);
+                ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
 
                 const dataUrl = pageCanvas.toDataURL('image/jpeg', 0.82);
 
-                if(i > 0) pdf.addPage([794, 1123], 'p');
-                pdf.addImage(dataUrl, 'JPEG', 0, 0, 794, 1123);
-
-                const pct = Math.round(((i+1)/pagesCount) * 100);
-                setReadingStatus(`📄 PDF: ${i+1}/${pagesCount} (${pct}%)`);
-                readingProgressText.textContent = `📄 Страница ${i+1} из ${pagesCount}`;
-                progressBar.style.width = `${pct}%`;
-                percentText.textContent = `${pct}%`;
-                updateMini();
+                if(globalPageNum === 0){
+                    pdf = new jsPDF({ orientation:'p', unit:'px', format:[A4_W, A4_H], hotfixes:['px_scaling'] });
+                } else {
+                    pdf.addPage([A4_W, A4_H], 'p');
+                }
+                pdf.addImage(dataUrl, 'JPEG', 0, 0, A4_W, A4_H);
+                globalPageNum++;
 
                 // Освобождаем память
                 pageCanvas.width = 0;
                 pageCanvas.height = 0;
+
+                // Прогресс
+                const chunkPct = (c / chunksCount) * 100;
+                const pagePct = (p / pagesInChunk) * (100 / chunksCount);
+                const pct = Math.min(99, Math.round(chunkPct + pagePct));
+                setReadingStatus(`📄 PDF: чанк ${c+1}/${chunksCount}, стр. ${globalPageNum}`);
+                readingProgressText.textContent = `📄 Готово страниц: ${globalPageNum}`;
+                progressBar.style.width = `${pct}%`;
+                percentText.textContent = `${pct}%`;
+                updateMini();
             }
 
             // Освобождаем большой canvas
             canvas.width = 0;
             canvas.height = 0;
 
-            addLog(`✅ PDF собран: ${pagesCount} стр.`, 'ok');
-            const pdfBlob = pdf.output('blob');
-            return pdfBlob;
-        } finally {
-            container.remove();
+            // Небольшая пауза между чанками чтобы браузер освободил память
+            await new Promise(r => setTimeout(r, 100));
         }
+
+        addLog(`✅ PDF собран: ${globalPageNum} стр.`, 'ok');
+        const pdfBlob = pdf.output('blob');
+        return pdfBlob;
+    } finally {
+        container.remove();
     }
+}
+// ============================================================
+// КОНЕЦ buildPdfFromHtml v63.1 (2026-09-15)
+// ============================================================
 
     // ============================================================
     // openReaderInNewTab
