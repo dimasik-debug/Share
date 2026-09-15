@@ -2072,10 +2072,13 @@ ${revHtml}
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
         const extMap = { 'MP3':'mp3','M4B':'m4b','M4A':'m4a','M4A/MP4':'m4a','FLAC':'flac','OGG':'ogg','WAV':'wav','MP4':'mp4','WEBM':'webm','MKV':'mkv','PDF':'pdf','ZIP':'zip' };
         const ext = extMap[formatInfo.name] || 'bin';
-        const fn = `${safe}.${ext}`;
+        // v82.1: если аудио — метка "(ext)" в имени
+        const audioTag = ['MP3','M4B','M4A','M4A/MP4','FLAC','OGG','WAV'].includes(formatInfo.name) ? ` (${ext})` : '';
+        const fn = `${safe}${audioTag}.${ext}`;
         await triggerDownload(blob, fn);
         const sz = (blob.size/1048576).toFixed(2);
-        addLog(`🎵 ${fn} (${sz} MB)`, 'ok');
+        if(audioTag) addLog(`🎧 Аудио → ${fn} (${sz} MB)`, 'ok');
+        else addLog(`🎵 ${fn} (${sz} MB)`, 'ok');
         zipInfo.style.display='inline';
         zipInfo.textContent = `✅ ${fn} (${sz} MB)`;
         zipInfo.style.color = '#4a8af4';
