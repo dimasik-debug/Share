@@ -1,36 +1,41 @@
 /**
- * LitRes Downloader v72.0 — TEXT PDF + FIX CYRILLIC + IMAGES
+ * LitRes Downloader v74.0 — ЦАРСКАЯ ВЕРСИЯ
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
  * 📕 PDF постранично: JPG/GIF → ZIP
  * 📕 PDF прямой (pdfjs/*.js + fname=*.pdf)
- * 📄 PDF BUILDER: РЕАЛЬНЫЙ ТЕКСТ (не canvas!) — v72
- *    → выделяемый, копируемый, кириллица через Roboto
- *    → картинки не рвутся между страницами
- *    → размер в 10-20 раз меньше canvas-версии
- * 🔤 Roboto Regular + Bold с fallback (если Regular нет → Bold как Regular)
- * 🖼️ Картинки: авто-расширение .jpg, 6 URL-вариантов, blob URL с ревоком
- * 📕 IMAGE PDF: книги-картинки → PDF (jsPDF)
- * 📦 ZIP fallback с HTML + картинками
+ * 🖨️ PDF принт — ОПЦИЯ (по умолчанию ВЫКЛ):
+ *    → window.print() в новой вкладке с HTML книги
+ *    → системные шрифты с кириллицей (без кракозябр)
+ *    → текст выделяемый и копируемый
+ *    → картинки не рвутся (page-break-inside: avoid)
+ *    → A4 формат по умолчанию через @page
+ * 📦 ZIP-схема (по умолчанию):
+ *    book.zip
+ *    ├── book.html          (ссылки на images/имя.jpg)
+ *    ├── about.html         (аннотация + рецензии)
+ *    ├── cover.jpg          (обложка)
+ *    ├── book_info.txt      (метаданные)
+ *    └── images/            (все картинки глав)
+ *        ├── _23.jpg
+ *        └── ...
+ * 📕 IMAGE PDF: книги-картинки → jsPDF
  * 🏁 SMART EOF: 5×404 = конец книги
  * 🔄 INFINITE RETRY: 100 попыток + адаптивная пауза 2→30с
  * 🚫 CORS DETECT: content.litres.ru → быстрый выход
  * 🎭 ZIP MASK DETECT: LitRes маскирует JSON под *.zip
- * 🖼️ COVER + ABOUT.HTML + REVIEWS в каждый ZIP
  * 💰 SAVINGS: счётчик сэкономленных рублей
  * 🔬 DIAGNOSTICS: ПОСЛЕДОВАТЕЛЬНО (ускорен старт ×3)
- * 📚 LIBS: JSZip + jsPDF + Roboto (Regular/Bold)
  * 🎨 DRAG-N-DROP окно
  * 💾 ЧЕКПОИНТЫ JSON-глав в localStorage
  * ⏱️ ETA для глав и файлов
  * 🛡️ SANITIZE HTML аннотации (XSS safe)
- * ♻️ REVOKE blob URL после PDF
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV72() {
-    console.log('%c🚀 LitRes Downloader v72.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+(function fullDownloaderV74() {
+    console.log('%c🚀 LitRes Downloader v74.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -44,7 +49,8 @@
      'litres-downloader-v53.js','litres-downloader-v54.js','litres-downloader-v55.js','litres-downloader-v56.js',
      'litres-downloader-v57.js','litres-downloader-v58.js','litres-downloader-v58.1.js','litres-downloader-v59.js',
      'litres-downloader-v60.js','litres-downloader-v60.1.js','litres-downloader-v60.2.js','litres-downloader-v62.js',
-     'litres-downloader-v63.js','litres-downloader-v69.js','litres-downloader-v70.js','litres-downloader-v70.1.js'
+     'litres-downloader-v63.js','litres-downloader-v69.js','litres-downloader-v70.js','litres-downloader-v70.1.js',
+     'litres-downloader-v71.js','litres-downloader-v72.js','litres-downloader-v73.js'
     ].forEach(f => fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' }).catch(()=>{}));
 
     // ═══ 🔊 SOUND ═══
@@ -66,7 +72,8 @@
         warn(){ this.note(440,0.2,0.07,0,'triangle'); this.note(349,0.3,0.06,0.1,'triangle'); },
         money(){ this.chord([1047,1319,1568],0.4,0.08,'triangle'); },
         diag(){ this.note(659,0.15,0.06,0,'triangle'); this.note(880,0.15,0.05,0.08,'triangle'); },
-        pdf(){ this.note(740,0.2,0.08,0,'triangle'); this.note(988,0.25,0.07,0.1,'triangle'); }
+        pdf(){ this.note(740,0.2,0.08,0,'triangle'); this.note(988,0.25,0.07,0.1,'triangle'); },
+        print(){ this.chord([523,698,880],0.6,0.10,'sine'); }
     };
     window.addEventListener('beforeunload', () => { try{ Sound.ctx?.close(); }catch(e){} });
 
@@ -98,7 +105,7 @@
     const GITHUB = { repo:'dimasik-debug/Share', path:'books/progress/', token: localStorage.getItem('github_token')||'' };
     const SOUND_KEY='litres_sound_enabled', MINI_KEY='litres_minimized', AUTOSTART_KEY='litres_autostart';
     const SAVINGS_KEY = 'litres_saved_money';
-    const PDF_MODE_KEY = 'litres_pdf_mode';
+    const PRINT_MODE_KEY = 'litres_print_pdf_mode';    // 🆕 v74: PDF принт (по умолчанию ВЫКЛ)
     const UI_POS_KEY = 'litres_ui_pos';
     const JSON_CHECKPOINT_KEY = 'litres_json_checkpoint';
 
@@ -202,143 +209,7 @@
         'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/lib/jspdf.umd.min.js',
         'https://raw.githubusercontent.com/dimasik-debug/Share/main/lib/jspdf.umd.min.js',
         'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-    ], () => { JSPDFLoaded = true; }, () => { console.warn('⚠️ jsPDF не загрузился'); }, 'jsPDF');
-
-    // ============================================================
-    // 🔤 Roboto с кириллицей (Regular + Bold) — v72
-    // ============================================================
-    let _fontsLoaded = null;
-
-    // ============================================================
-    // ФУНКЦИЯ: fetchFontB64
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Качает TTF и конвертит в base64 (чанками по 0x8000).
-    // ============================================================
-    async function fetchFontB64(url){
-        const r = await fetch(url, { mode:'cors' });
-        if(!r.ok) throw new Error(`HTTP ${r.status}`);
-        const buf = await r.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let bin = '';
-        const CHUNK = 0x8000;
-        for(let i = 0; i < bytes.length; i += CHUNK){
-            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-        }
-        return btoa(bin);
-    }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ fetchFontB64 (15.09.2026)
-    // ============================================================
-
-   // ============================================================
-// ФУНКЦИЯ: ensureCyrillicFont (ФИКС v71.1)
-// ДАТА: 15.09.2026
-// ОПИСАНИЕ: Регистрирует Roboto Regular + Bold в jsPDF.
-//   ФИКС: передаём ArrayBuffer вместо base64-строки.
-//   jsPDF v2.5.1 путает длинный base64 с URL и пытается его скачать
-//   через fetch → net::ERR_CONNECTION_CLOSED.
-//   Решение: декодируем base64 → Uint8Array → ArrayBuffer.
-// ============================================================
-async function ensureCyrillicFont(pdf){
-    if(_fontsLoaded){
-        pdf.addFont(_fontsLoaded.regular, 'Roboto', 'normal');
-        pdf.addFont(_fontsLoaded.bold, 'Roboto', 'bold');
-        return true;
-    }
-
-    const BASES = [
-        'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/fonts/',
-        'https://raw.githubusercontent.com/dimasik-debug/Share/main/fonts/'
-    ];
-    const LS_R = 'litres_font_regular_b64', LS_B = 'litres_font_bold_b64';
-
-    // --- base64 → Uint8Array ---
-    function b64ToUint8(b64){
-        const bin = atob(b64);
-        const len = bin.length;
-        const bytes = new Uint8Array(len);
-        for(let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-        return bytes;
-    }
-
-    let regularB64 = null, boldB64 = null;
-
-    // --- localStorage ---
-    try{
-        regularB64 = localStorage.getItem(LS_R);
-        boldB64 = localStorage.getItem(LS_B);
-        if(regularB64 && regularB64.length < 50000){
-            console.warn(`⚠️ Кэш Regular повреждён — сбрасываем`);
-            localStorage.removeItem(LS_R);
-            regularB64 = null;
-        }
-        if(boldB64 && boldB64.length < 50000){
-            console.warn(`⚠️ Кэш Bold повреждён — сбрасываем`);
-            localStorage.removeItem(LS_B);
-            boldB64 = null;
-        }
-        if(regularB64) console.log(`✅ Roboto-Regular из кэша (${Math.round(regularB64.length/1024)} KB base64)`);
-        if(boldB64) console.log(`✅ Roboto-Bold из кэша (${Math.round(boldB64.length/1024)} KB base64)`);
-    }catch(e){
-        console.warn('⚠️ localStorage недоступен:', e.message);
-    }
-
-    // --- загрузка ---
-    async function loadOne(name){
-        for(const base of BASES){
-            const url = base + name;
-            try{
-                console.log(`⬇️ Пробуем ${url}`);
-                const b64 = await fetchFontB64(url);
-                if(!b64 || b64.length < 50000){
-                    console.warn(`⚠️ ${name}: слишком маленький файл`);
-                    continue;
-                }
-                console.log(`✅ ${name}: ${Math.round(b64.length/1024)} KB base64`);
-                return b64;
-            }catch(e){
-                console.warn(`⚠️ ${name}: ${base.split('/')[2]} → ${e.message}`);
-            }
-        }
-        return null;
-    }
-
-    if(!regularB64){
-        regularB64 = await loadOne('Roboto-Regular.ttf');
-        if(regularB64){ try{ localStorage.setItem(LS_R, regularB64); }catch(e){} }
-    }
-    if(!boldB64){
-        boldB64 = await loadOne('Roboto-Bold.ttf');
-        if(boldB64){ try{ localStorage.setItem(LS_B, boldB64); }catch(e){} }
-    }
-
-    // --- fallback ---
-    if(!regularB64 && boldB64){
-        console.warn('⚠️ Roboto-Regular не найден — используем Bold как Regular');
-        regularB64 = boldB64;
-    }
-    if(!boldB64 && regularB64){
-        console.warn('⚠️ Roboto-Bold не найден — используем Regular как Bold');
-        boldB64 = regularB64;
-    }
-    if(!regularB64) throw new Error('Ни Roboto-Regular, ни Roboto-Bold не загрузились');
-
-    // --- 🔥 ФИКС: конвертим в Uint8Array и кэшируем ---
-    console.log('🔧 Конвертим base64 → Uint8Array...');
-    const regularBytes = b64ToUint8(regularB64);
-    const boldBytes = b64ToUint8(boldB64);
-    console.log(`✅ Regular: ${regularBytes.length} байт, Bold: ${boldBytes.length} байт`);
-
-    pdf.addFont(regularBytes, 'Roboto', 'normal');
-    pdf.addFont(boldBytes, 'Roboto', 'bold');
-
-    _fontsLoaded = { regular: regularBytes, bold: boldBytes };
-    console.log(`✅ Roboto зарегистрирован в jsPDF (Regular + Bold)`);
-    return true;
-}
-// ============================================================
-// КОНЕЦ ФУНКЦИИ ensureCyrillicFont (15.09.2026)
-// ============================================================
+    ], () => { JSPDFLoaded = true; }, () => { console.warn('⚠️ jsPDF не загрузился (нужен только для image-only книг)'); }, 'jsPDF');
 
     // ═══ URL / Session ═══
     const urlParams = new URLSearchParams(window.location.search);
@@ -851,7 +722,7 @@ async function ensureCyrillicFont(pdf){
     }
 
     // ============================================================
-    // diagnoseStrategies — ПОСЛЕДОВАТЕЛЬНО (v72)
+    // diagnoseStrategies — ПОСЛЕДОВАТЕЛЬНО
     // ============================================================
     async function diagnoseStrategies(){
         const fid = state.fileId || bookInfo.fileId;
@@ -861,7 +732,7 @@ async function ensureCyrillicFont(pdf){
             return null;
         }
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
-        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v72.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
+        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v74.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
         console.log(`📖 Книга: "${bookInfo.title}"`);
         console.log(`🆔 artId=${artId}, fileId=${fid}`);
@@ -890,9 +761,6 @@ async function ensureCyrillicFont(pdf){
                 results[key] = await fn(fid);
             }catch(e){
                 results[key] = { ok:false, note:e.message, name:label };
-            }
-            if(key === 'pdf' && results[key].ok){
-                console.log(`✅ PDF доступен — приоритет 1`);
             }
         }
 
@@ -928,40 +796,35 @@ async function ensureCyrillicFont(pdf){
     function escHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
     // ============================================================
-    // ФУНКЦИЯ: litJsonToHtml (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Конвертит JSON-главу LitRes в HTML.
-    //   v72: если у картинки нет расширения — добавляем .jpg
-    //   (litres часто отдаёт src="img_001" без .jpg, и extractImageNames их теряет).
+    // litJsonToHtml — картинки с путём images/имя.jpg (v74)
     // ============================================================
-    function litJsonToHtml(n){
+    function litJsonToHtml(n, opts = {}){
+        const imgPrefix = opts.imgPrefix || 'images/';
         if(!Array.isArray(n)){
             if(typeof n==='string') return escHtml(n);
-            if(n&&typeof n==='object') return litJsonToHtml(n.c||[]);
+            if(n&&typeof n==='object') return litJsonToHtml(n.c||[], opts);
             return '';
         }
         return n.map(x=>{
             if(typeof x==='string') return escHtml(x);
             if(!x||!x.t) return '';
 
-            // --- Обработка картинок ---
             if(x.t === 'img'){
                 let file = x.s || '';
                 if(!file && x.src && /\.(?:jpe?g|png|gif|webp|svg|bmp)$/i.test(x.src)) file = x.src;
                 if(!file) return '';
 
-                // v72: добавляем .jpg если расширения нет
                 if(!/\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(file)){
                     file += '.jpg';
                 }
+                const cleanName = file.replace(/^\.\//, '').replace(/^.*\//, '').trim();
 
                 const w = x.w ? ` width="${x.w}"` : '';
                 const h = x.h ? ` height="${x.h}"` : '';
-                return `<img src="${escHtml(file)}" alt="" loading="lazy"${w}${h} class="litres-img">`;
+                return `<img src="${escHtml(imgPrefix + cleanName)}" alt="" loading="lazy"${w}${h} class="litres-img">`;
             }
 
-            // --- Обработка текстовых узлов ---
-            const i = litJsonToHtml(x.c||[]);
+            const i = litJsonToHtml(x.c||[], opts);
             switch(x.t){
                 case 'title':    return `<h2>${i}</h2>`;
                 case 'subtitle': return `<h3>${i}</h3>`;
@@ -973,9 +836,6 @@ async function ensureCyrillicFont(pdf){
             }
         }).join('');
     }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ litJsonToHtml (15.09.2026)
-    // ============================================================
 
     async function fetchJsonChapter(num){
         const fid=state.fileId; if(!fid) return { status:'error' };
@@ -987,21 +847,24 @@ async function ensureCyrillicFont(pdf){
             if(!r.ok) return { status:'error', code:r.status };
             const t = await r.text();
             if(!t || t.length < 10) return { status:'empty' };
-            return { status:'ok', html:litJsonToHtml(parseLitFile(t)) };
+            // v74: картинки в подпапке images/
+            return { status:'ok', html:litJsonToHtml(parseLitFile(t), { imgPrefix:'images/' }) };
         }catch(e){ return { status:'error' }; }
     }
 
     // ============================================================
-    // buildBookHtml
+    // buildBookHtml — версия для ZIP (картинки в images/)
     // ============================================================
-    function buildBookHtml(ch, m){
+    function buildBookHtml(ch, m, opts = {}){
         const st = escHtml(m.title||'Книга');
         const sa = escHtml(m.author||'Неизвестный автор');
         const totalImgs = ch.reduce((sum,h) => sum + extractImageNames(h).length, 0);
+        const forPrint = opts.forPrint || false;
+        const imgPrefix = forPrint ? '' : 'images/';
         return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title>
 <style>
 *{box-sizing:border-box;}
-body{font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}
+body{font-family:Georgia,'Times New Roman','PT Serif',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}
 h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}
 h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}
 h2:first-of-type{page-break-before:auto;}
@@ -1011,28 +874,30 @@ em{font-style:italic;} strong{font-weight:bold;}
 img.litres-img{max-width:100%;height:auto;display:block;margin:24px auto;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.08);}
 .meta{color:#6a8aaa;font-size:14px;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #ddd;}
 .footer{margin-top:80px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#aab8c4;text-align:center;}
+@media print {
+    body { font-size: 12pt; padding: 0; max-width: none; background: #fff !important; color: #000 !important; }
+    h1.book-title { font-size: 22pt; color: #000; border-bottom: 2px solid #000; }
+    h2 { font-size: 16pt; color: #000; page-break-after: avoid; }
+    h3 { font-size: 13pt; color: #000; page-break-after: avoid; }
+    p { orphans: 3; widows: 3; }
+    img, .litres-img { page-break-inside: avoid !important; break-inside: avoid !important; max-width: 100%; height: auto; box-shadow: none; border-radius: 0; }
+    a { color: #000 !important; text-decoration: none !important; }
+    .meta { color: #333; }
+    .footer { color: #666; }
+}
+@page { size: A4; margin: 18mm 16mm 20mm 16mm; }
 </style></head><body>
 <h1 class="book-title">${st}</h1>
 <div class="meta">✍️ ${sa}</div>
 ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v72.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
+<div class="footer">📚 LitRes Downloader v74.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
 </body></html>`;
     }
 
     // ============================================================
-    // КОНСТАНТА: IMG_RE (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Regex для поиска <img src="..."> — БЕЗ требования расширения.
-    //   v72: ловит картинки без .jpg/.png (litres часто отдаёт "img_001").
+    // extractImageNames
     // ============================================================
     const IMG_RE = /<img[^>]+src\s*=\s*["']([^"']+)["']/gi;
-
-    // ============================================================
-    // ФУНКЦИЯ: extractImageNames (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Извлекает имена картинок из HTML.
-    //   v72: если расширения нет — добавляем .jpg; фильтруем data:/blob:.
-    // ============================================================
     function extractImageNames(html){
         const names = new Set();
         IMG_RE.lastIndex = 0;
@@ -1043,7 +908,6 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
             if(name.startsWith('data:')) continue;
             if(name.startsWith('blob:')) continue;
 
-            // v72: если расширения нет — добавляем .jpg
             if(!/\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)){
                 name += '.jpg';
             }
@@ -1051,16 +915,9 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
         }
         return [...names];
     }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ extractImageNames (15.09.2026)
-    // ============================================================
 
     // ============================================================
-    // ФУНКЦИЯ: fetchBookImage (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Качает картинку с litres по имени.
-    //   v72: больше URL-вариантов; если .jpg не сработал — пробуем без расширения;
-    //   детальные логи каждого URL.
+    // fetchBookImage
     // ============================================================
     async function fetchBookImage(imgName){
         const cleanName = imgName.replace(/^\.\//, '').replace(/^.*\//, '').trim();
@@ -1094,11 +951,11 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
                     (head[0]===0x47 && head[1]===0x49) ||
                     (head[0]===0x52 && head[1]===0x49);
                 if(!isImg){
-                    console.log(`🔍 ${cleanName}: не картинка (магия ${head[0].toString(16)} ${head[1].toString(16)})`);
+                    console.log(`🔍 ${cleanName}: не картинка`);
                     continue;
                 }
 
-                console.log(`✅ Картинка ${cleanName}: ${blob.size} байт с ${url.substring(0, 80)}`);
+                console.log(`✅ Картинка ${cleanName}: ${blob.size} байт`);
                 return { name: cleanName, blob };
             }catch(e){
                 console.log(`🔍 ${cleanName}: ${e.message}`);
@@ -1107,15 +964,9 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
         console.warn(`❌ Картинка ${cleanName} не скачалась ни по одному URL`);
         return null;
     }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ fetchBookImage (15.09.2026)
-    // ============================================================
 
     // ============================================================
-    // ФУНКЦИЯ: downloadAllBookImages (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Качает все картинки из глав.
-    //   v72: детальные логи имён; адаптивная конкурентность; список неудачных.
+    // downloadAllBookImages
     // ============================================================
     async function downloadAllBookImages(chapters){
         const allNames = new Set();
@@ -1125,10 +976,6 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
 
         if(allNames.size === 0){
             addLog('🖼️ Картинок не найдено', 'info');
-            console.log('🔍 extractImageNames вернул 0 — проверь JSON-главы:');
-            if(chapters.length > 0){
-                console.log('   Первая глава (первые 2000 симв):', chapters[0].substring(0, 2000));
-            }
             return new Map();
         }
 
@@ -1146,7 +993,7 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
         let done = 0;
 
         const CONCURRENCY = (navigator.connection?.effectiveType === '4g') ? 6 : 4;
-        console.log(`🖼️ Конкурентность: ${CONCURRENCY} (connection: ${navigator.connection?.effectiveType || 'unknown'})`);
+        console.log(`🖼️ Конкурентность: ${CONCURRENCY}`);
 
         for(let i = 0; i < list.length; i += CONCURRENCY){
             if(state.isStopped) break;
@@ -1177,9 +1024,6 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
         addLog(`✅ Картинок: ${done}/${list.length}${failed.length?` (ошибок: ${failed.length})`:''}`, done>0?'ok':'warn');
         return result;
     }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ downloadAllBookImages (15.09.2026)
-    // ============================================================
 
     // ═══ ОБЛОЖКА + РЕЦЕНЗИИ ═══
     async function fetchCoverBlob(artId){
@@ -1268,7 +1112,7 @@ h2{font-size:22px;margin:40px 0 18px;color:#1a2a4a;border-left:4px solid #4a8af4
 <div class="annotation">${cleanAnn || '<i>Аннотация отсутствует</i>'}</div>
 <h2>💬 Рецензии (${reviews.length})</h2>
 ${revHtml}
-<div class="footer">📚 LitRes Downloader v72.0<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
+<div class="footer">📚 LitRes Downloader v74.0<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
 </body></html>`;
     }
 
@@ -1312,7 +1156,99 @@ ${revHtml}
     }
 
     // ============================================================
-    // buildPdfFromImages — картинки → PDF
+    // 🖨️ buildPdfViaPrint — печать через браузер (v74)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Открывает HTML книги в новой вкладке + window.print().
+    //   Системные шрифты (кириллица без кракозябр), выделяемый текст,
+    //   картинки не рвутся. @page A4 по умолчанию.
+    //   Fallback: если попап заблокирован — возвращаем { ok:false }.
+    // ============================================================
+    async function buildPdfViaPrint(htmlContent, title = 'Книга', imagesMap = null){
+        addLog(`🖨️ Готовим предпросмотр печати...`, 'step');
+        try{ Sound.print(); }catch(e){}
+
+        // --- Подменяем src картинок на blob URL ---
+        const objUrls = [];
+        let html = htmlContent;
+
+        if(imagesMap && imagesMap.size > 0){
+            console.log(`🖼️ Подменяем ${imagesMap.size} картинок на blob URL для печати...`);
+            let replaced = 0;
+            for(const [name, blob] of imagesMap){
+                if(!blob || blob.size < 100) continue;
+                const objUrl = URL.createObjectURL(blob);
+                objUrls.push(objUrl);
+                // пробуем разные префиксы
+                const candidates = [
+                    `src="images/${name}"`,
+                    `src="images/${name.replace(/^images\//,'')}"`,
+                    `src="${name}"`,
+                    `src='images/${name}'`,
+                    `src='${name}'`
+                ];
+                let didReplace = false;
+                for(const cand of candidates){
+                    if(html.includes(cand)){
+                        const prefix = cand.startsWith(`src="images/`) ? `src="images/` :
+                                      cand.startsWith(`src='images/`) ? `src='images/` :
+                                      cand.startsWith(`src="`) ? `src="` : `src='`;
+                        const quote = prefix.endsWith('"') ? '"' : "'";
+                        const replacement = `src=${quote}${objUrl}${quote}`;
+                        html = html.split(cand).join(replacement);
+                        didReplace = true;
+                        break;
+                    }
+                }
+                if(didReplace) replaced++;
+            }
+            console.log(`🔗 Подменено: ${replaced} из ${imagesMap.size}`);
+        }
+
+        // --- Открываем новую вкладку ---
+        const w = window.open('', '_blank');
+        if(!w){
+            addLog('⚠️ Попап заблокирован! Разреши попапы для litres.ru', 'err');
+            for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} }
+            return { ok:false, reason:'popup-blocked' };
+        }
+
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+
+        // --- Ждём загрузки ---
+        await new Promise(resolve => {
+            const checkReady = () => {
+                if(w.document.readyState === 'complete') resolve();
+                else setTimeout(checkReady, 100);
+            };
+            checkReady();
+            setTimeout(resolve, 5000);
+        });
+
+        await new Promise(r => setTimeout(r, 800));
+
+        // --- Печатаем ---
+        try{
+            w.focus();
+            w.print();
+            addLog('🖨️ Диалог печати открыт — выбери "Сохранить как PDF"', 'ok');
+        }catch(e){
+            addLog(`⚠️ Не удалось вызвать print(): ${e.message}`, 'err');
+            return { ok:false, reason:'print-failed', error:e.message };
+        }
+
+        // --- Ревок blob URL через минуту ---
+        setTimeout(() => {
+            for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} }
+            console.log(`♻️ Ревокнуто ${objUrls.length} blob URL`);
+        }, 60000);
+
+        return { ok: true, method: 'print' };
+    }
+
+    // ============================================================
+    // buildPdfFromImages — для image-only книг (jsPDF)
     // ============================================================
     async function buildPdfFromImages(imageBlobs, title='Книга'){
         if(!JSPDFLoaded){
@@ -1364,291 +1300,6 @@ ${revHtml}
         addLog(`✅ PDF собран: ${imageBlobs.length} стр. (${(pdfBlob.size/1048576).toFixed(2)} MB)`, 'ok');
         return pdfBlob;
     }
-
-    // ============================================================
-    // buildPdfFromHtml — НАТИВНЫЙ ТЕКСТОВЫЙ PDF (v72)
-    // ============================================================
-    async function buildPdfFromHtml(htmlContent, title='Книга'){
-        if(!JSPDFLoaded){
-            await new Promise(res => {
-                const c = setInterval(() => { if(JSPDFLoaded){ clearInterval(c); res(); } }, 200);
-                setTimeout(() => { clearInterval(c); res(); }, 8000);
-            });
-        }
-        if(!JSPDFLoaded || !window.jspdf?.jsPDF) throw new Error('jsPDF не загрузился');
-
-        addLog(`📄 Верстаем текстовый PDF (${Math.round(htmlContent.length/1000)}K симв)...`, 'step');
-        try{ Sound.pdf(); }catch(e){}
-
-        const { jsPDF } = window.jspdf;
-        const A4_W = 595.28, A4_H = 841.89;
-        const MARGIN_L = 56, MARGIN_R = 56, MARGIN_T = 56, MARGIN_B = 56;
-        const CONTENT_W = A4_W - MARGIN_L - MARGIN_R;
-
-        const pdf = new jsPDF({ orientation:'p', unit:'pt', format:'a4' });
-
-        let fontReady = false;
-        try{
-            fontReady = await ensureCyrillicFont(pdf);
-        }catch(e){
-            addLog(`⚠️ Шрифт не встроился: ${e.message} — текст будет транслитом`, 'warn');
-        }
-        const FONT = fontReady ? 'Roboto' : 'helvetica';
-
-        const setFont = (style, size) => {
-            pdf.setFont(FONT, style);
-            pdf.setFontSize(size);
-        };
-
-        const blocks = parseHtmlToBlocks(htmlContent);
-        addLog(`📄 Блоков: ${blocks.length}`, 'info');
-
-        let y = MARGIN_T;
-        let pageNum = 1;
-        const totalImages = blocks.filter(b => b.type === 'img').length;
-        let imagesPlaced = 0;
-
-        function newPage(){
-            pdf.addPage();
-            pageNum++;
-            y = MARGIN_T;
-        }
-        function ensureSpace(h){
-            if(y + h > A4_H - MARGIN_B) newPage();
-        }
-
-        for(let i = 0; i < blocks.length; i++){
-            if(state.isStopped) throw new Error('остановлено пользователем');
-            const b = blocks[i];
-
-            if(b.type === 'img'){
-                try{
-                    const imgData = await loadImageForPdf(b.src);
-                    if(!imgData){ imagesPlaced++; continue; }
-
-                    const maxW = CONTENT_W;
-                    const maxH = A4_H * 0.55;
-                    let w = imgData.w, h = imgData.h;
-                    const k = Math.min(maxW / w, maxH / h, 1);
-                    w *= k; h *= k;
-
-                    if(y + h > A4_H - MARGIN_B){
-                        if(h < A4_H - MARGIN_T - MARGIN_B){
-                            newPage();
-                        } else {
-                            const k2 = Math.min(maxW / imgData.w, (A4_H - MARGIN_T - MARGIN_B) / imgData.h);
-                            w = imgData.w * k2; h = imgData.h * k2;
-                        }
-                    }
-
-                    const x = MARGIN_L + (CONTENT_W - w) / 2;
-                    pdf.addImage(imgData.dataUrl, imgData.fmt, x, y, w, h, undefined, 'FAST');
-                    y += h + 12;
-                    imagesPlaced++;
-                }catch(e){
-                    console.warn('img skip:', e.message);
-                }
-                continue;
-            }
-
-            const { text, style, size, align, lineH, spaceBefore, spaceAfter } = b;
-            if(!text || !text.trim()){ y += spaceAfter || 6; continue; }
-
-            setFont(style, size);
-            const lines = pdf.splitTextToSize(text, CONTENT_W);
-            const keepWithNext = b.type === 'h1' || b.type === 'h2' || b.type === 'h3';
-            const neededH = lines.length * lineH + spaceBefore + spaceAfter;
-
-            if(keepWithNext){
-                if(y + neededH + lineH * 2 > A4_H - MARGIN_B) newPage();
-            } else {
-                ensureSpace(neededH);
-            }
-
-            y += spaceBefore || 0;
-
-            for(let li = 0; li < lines.length; li++){
-                if(y + lineH > A4_H - MARGIN_B) newPage();
-                let x = MARGIN_L;
-                if(align === 'center') x = A4_W / 2;
-                else if(align === 'right') x = A4_W - MARGIN_R;
-                pdf.text(lines[li], x, y + size, { align: align || 'left', baseline: 'alphabetic' });
-                y += lineH;
-            }
-
-            y += spaceAfter || 0;
-
-            if(i % 50 === 0){
-                const pct = Math.round(i / blocks.length * 100);
-                setReadingStatus(`📄 Вёрстка: ${pct}%`);
-                progressBar.style.width = `${pct}%`;
-                percentText.textContent = `${pct}%`;
-                updateMini();
-            }
-        }
-
-        addLog(`✅ PDF: ${pageNum} стр., картинок: ${imagesPlaced}/${totalImages}`, 'ok');
-        return pdf.output('blob');
-    }
-
-    // ============================================================
-    // parseHtmlToBlocks — HTML → плоские блоки
-    // ============================================================
-    function parseHtmlToBlocks(html){
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const blocks = [];
-        const body = doc.body;
-
-        function pushText(text, opts){
-            if(!text) return;
-            blocks.push({
-                type: opts.type || 'text',
-                text,
-                style: opts.style || 'normal',
-                size: opts.size || 11,
-                align: opts.align || 'left',
-                lineH: opts.lineH || 16,
-                spaceBefore: opts.spaceBefore || 0,
-                spaceAfter: opts.spaceAfter || 8
-            });
-        }
-
-        function walk(node){
-            for(const child of node.childNodes){
-                if(child.nodeType === Node.TEXT_NODE){
-                    const t = child.textContent.replace(/\s+/g, ' ').trim();
-                    if(t) pushText(t, { type:'p', style:'normal', size:11, align:'justify', lineH:16, spaceBefore:0, spaceAfter:8 });
-                    continue;
-                }
-                if(child.nodeType !== Node.ELEMENT_NODE) continue;
-                const tag = child.tagName.toLowerCase();
-
-                if(tag === 'h1'){
-                    pushText((child.textContent||'').replace(/\s+/g,' ').trim(),
-                        { style:'bold', size:22, align:'center', lineH:30, spaceBefore:24, spaceAfter:18, type:'h1' });
-                    continue;
-                }
-                if(tag === 'h2'){
-                    pushText((child.textContent||'').replace(/\s+/g,' ').trim(),
-                        { style:'bold', size:17, align:'left', lineH:24, spaceBefore:22, spaceAfter:12, type:'h2' });
-                    continue;
-                }
-                if(tag === 'h3'){
-                    pushText((child.textContent||'').replace(/\s+/g,' ').trim(),
-                        { style:'bold', size:14, align:'left', lineH:20, spaceBefore:18, spaceAfter:8, type:'h3' });
-                    continue;
-                }
-                if(tag === 'p'){
-                    pushText((child.textContent||'').replace(/\s+/g,' ').trim(),
-                        { style:'normal', size:11, align:'justify', lineH:16, spaceBefore:0, spaceAfter:8, type:'p' });
-                    continue;
-                }
-                if(tag === 'br'){
-                    blocks.push({ type:'text', text:'', style:'normal', size:11, align:'left', lineH:16, spaceBefore:0, spaceAfter:6 });
-                    continue;
-                }
-                if(tag === 'img'){
-                    const src = child.getAttribute('src') || '';
-                    if(src && !src.startsWith('data:image/svg')) blocks.push({ type:'img', src });
-                    continue;
-                }
-                if(tag === 'hr'){
-                    blocks.push({ type:'hr' });
-                    continue;
-                }
-                if(['div','section','article','blockquote','ul','ol','li','figure','figcaption','span','em','strong','i','b','u','sub','sup','a'].includes(tag)){
-                    walk(child);
-                    continue;
-                }
-                walk(child);
-            }
-        }
-
-        walk(body);
-        return blocks;
-    }
-
-    // ============================================================
-    // ФУНКЦИЯ: loadImageForPdf (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Грузит картинку (blob:/data:/http) → canvas → dataURL JPEG.
-    //   v72: crossOrigin только для http(s); проверка naturalWidth>0;
-    //   детальные логи каждого шага; кэш включая неудачные (null).
-    // ============================================================
-    const _imgCache = new Map();
-    async function loadImageForPdf(src){
-        if(_imgCache.has(src)) return _imgCache.get(src);
-
-        return new Promise(resolve => {
-            const img = new Image();
-
-            // crossOrigin нужен только для http(s) — blob:/data: не требуют
-            if(/^https?:/i.test(src)){
-                img.crossOrigin = 'anonymous';
-            }
-
-            const t = setTimeout(() => {
-                console.warn(`⏱️ loadImageForPdf timeout: ${src.substring(0, 80)}`);
-                _imgCache.set(src, null);
-                resolve(null);
-            }, 15000);
-
-            img.onload = () => {
-                clearTimeout(t);
-                try{
-                    const w = img.naturalWidth;
-                    const h = img.naturalHeight;
-
-                    if(!w || !h){
-                        console.warn(`⚠️ loadImageForPdf: 0×0 → ${src.substring(0, 80)}`);
-                        _imgCache.set(src, null);
-                        resolve(null);
-                        return;
-                    }
-
-                    const MAX_SIDE = 1600;
-                    const k = Math.min(MAX_SIDE / w, MAX_SIDE / h, 1);
-                    const cw = Math.round(w * k), ch = Math.round(h * k);
-
-                    const c = document.createElement('canvas');
-                    c.width = cw; c.height = ch;
-                    const ctx = c.getContext('2d');
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, cw, ch);
-                    ctx.drawImage(img, 0, 0, cw, ch);
-
-                    const dataUrl = c.toDataURL('image/jpeg', 0.85);
-                    if(!dataUrl || dataUrl.length < 100){
-                        console.warn(`⚠️ loadImageForPdf: пустой dataURL → ${src.substring(0, 80)}`);
-                        _imgCache.set(src, null);
-                        resolve(null);
-                        return;
-                    }
-
-                    const result = { dataUrl, fmt:'JPEG', w: cw, h: ch };
-                    console.log(`🖼️ loadImageForPdf OK: ${w}×${h} → ${cw}×${ch}, ${Math.round(dataUrl.length/1024)} KB`);
-                    _imgCache.set(src, result);
-                    resolve(result);
-                }catch(e){
-                    console.warn(`❌ loadImageForPdf canvas error: ${e.message} → ${src.substring(0, 80)}`);
-                    _imgCache.set(src, null);
-                    resolve(null);
-                }
-            };
-
-            img.onerror = (e) => {
-                clearTimeout(t);
-                console.warn(`❌ loadImageForPdf onerror: ${src.substring(0, 80)}`, e);
-                _imgCache.set(src, null);
-                resolve(null);
-            };
-
-            img.src = src;
-        });
-    }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ loadImageForPdf (15.09.2026)
-    // ============================================================
 
     // ============================================================
     // openReaderInNewTab
@@ -1738,9 +1389,10 @@ ${revHtml}
             .ldl-toggle input{width:14px;height:14px;cursor:pointer;margin:0;accent-color:#4a8af4;}
             .ldl-toggle.force input{accent-color:#e74c3c;}
             .ldl-toggle.auto input{accent-color:#27ae60;}
-            .ldl-toggle.pdf input{accent-color:#f0a500;}
+            .ldl-toggle.print input{accent-color:#f0a500;}
             .ldl-force-status{margin-left:auto;font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px;font-family:'SF Mono',Consolas,monospace;}
             .ldl-force-status.on{color:#e74c3c;background:rgba(231,76,60,.15);}
+            .ldl-force-status.print-on{color:#f0a500;background:rgba(240,165,0,.15);}
             .ldl-footer{padding:0 16px 14px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:rgba(255,255,255,.4);flex-shrink:0;gap:8px;}
             #status_text{flex:1;text-align:center;font-family:'SF Mono',Consolas,monospace;}
             #zip_info{color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;display:none;}
@@ -1761,7 +1413,7 @@ ${revHtml}
                 <div class="ldl-logo">📚</div>
                 <div style="flex:1;min-width:0;">
                     <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v72.0 · text pdf + cyrillic + img fix</div>
+                    <div class="ldl-subtitle">v74.0 · царская · zip + print</div>
                 </div>
                 <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
                 <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
@@ -1809,7 +1461,7 @@ ${revHtml}
 
                 <div class="ldl-result" id="result_banner">
                     <button class="ldl-result-close" id="result_close" title="Закрыть">✕</button>
-                    <div class="ldl-result-title">✅ Файл скачан!</div>
+                    <div class="ldl-result-title">✅ Готово!</div>
                     <div id="result_text"></div>
                 </div>
             </div>
@@ -1822,7 +1474,7 @@ ${revHtml}
             <div class="ldl-toggles">
                 <label class="ldl-toggle force"><input type="checkbox" id="force_mode">⚡ FORCE</label>
                 <label class="ldl-toggle auto" title="Автоматически нажать Старт"><input type="checkbox" id="autostart_mode">🚀 АВТО</label>
-                <label class="ldl-toggle pdf" title="PDF вместо ZIP (текст + картинки)"><input type="checkbox" id="pdf_mode" checked>📕 PDF</label>
+                <label class="ldl-toggle print" title="PDF через печать браузера (по умолчанию ВЫКЛ)"><input type="checkbox" id="print_mode">🖨️ PDF принт</label>
                 <div class="ldl-force-status" id="force_status">⏸ выкл</div>
             </div>
 
@@ -1863,7 +1515,7 @@ ${revHtml}
     const savingsMeta = $('savings_meta');
     const savingsBlock = $('savings_block');
     const btnSavingsReset = $('btn_savings_reset');
-    const pdfModeCheckbox = $('pdf_mode');
+    const printModeCheckbox = $('print_mode');
 
     Sound.enabled = localStorage.getItem(SOUND_KEY) !== 'false';
     btnSound.textContent = Sound.enabled ? '🔊' : '🔇';
@@ -1878,7 +1530,8 @@ ${revHtml}
         autoInterval:null, mode:'zip', jsonChapters:[], jsonEmptyStreak:0, skippedChapters:[],
         jsonNotFoundStreak:0, jsonErrorStreak:0,
         minimized:false, resultFormat:null, resultFilename:null,
-        savingsApplied:false, diagnostics:null, startTime:0, jsonCheckpointKey:null
+        savingsApplied:false, diagnostics:null, startTime:0, jsonCheckpointKey:null,
+        printMode: false  // 🆕 v74: PDF принт
     };
     try{ state.minimized = localStorage.getItem(MINI_KEY)==='1'; }catch(e){}
 
@@ -2026,7 +1679,7 @@ ${revHtml}
         }
         $('result_text').innerHTML = `<div class="ldl-result-line">📁 <b>${filename}</b></div><div class="ldl-result-line">📄 Формат: <span class="fmt"><b>${format}</b></span></div><div class="ldl-result-line">📦 Размер: <b>${sz}</b></div>${moneyLine}<div style="margin-top:6px;font-size:10px;color:rgba(255,255,255,.5);">Файл в папке «Загрузки»</div>`;
         $('result_banner').style.display = 'block';
-        setPhase('done'); setReadingStatus('✅ Файл скачан'); animateHand('✅');
+        setPhase('done'); setReadingStatus('✅ Готово'); animateHand('✅');
         updateButtons(); Sound.complete();
     }
 
@@ -2119,7 +1772,7 @@ ${revHtml}
             isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
         });
         if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v74.0`);
         try{
             const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
@@ -2245,7 +1898,7 @@ ${revHtml}
     }
 
     // ============================================================
-    // finalizeJsonBook — выбор стратегии
+    // finalizeJsonBook — финализация JSON-книги (v74)
     // ============================================================
     async function finalizeJsonBook(){
         if(state.isStopped || !state.jsonChapters.length){ state.isRunning = false; updateButtons(); return; }
@@ -2253,148 +1906,161 @@ ${revHtml}
         zipInfo.style.display = 'inline';
         if(state.skippedChapters.length > 0) logWarn(`Пропущено глав: ${state.skippedChapters.length}`);
 
+        // Читаем настройку PDF принт в момент финализации
+        let userWantsPrint = false;
+        try{ userWantsPrint = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
+        console.log(`🖨️ PDF принт: ${userWantsPrint ? 'ВКЛ' : 'ВЫКЛ'}`);
+
+        // Качаем картинки (нужны для обоих режимов)
         let imagesMap = new Map();
         try{ imagesMap = await downloadAllBookImages(state.jsonChapters); }
         catch(e){ logWarn(`🖼️ Ошибка: ${e.message}`); }
         if(state.isStopped){ state.isRunning = false; updateButtons(); return; }
 
         const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
-
-        let userWantsPdf = true;
-        try{ userWantsPdf = localStorage.getItem(PDF_MODE_KEY) !== 'false'; }catch(e){}
-
         const totalTextLen = state.jsonChapters.reduce((s,h) => s + (h||'').replace(/<[^>]+>/g,'').length, 0);
         const totalImgCount = imagesMap.size;
-        const avgTextPerImage = totalImgCount > 0 ? Math.round(totalTextLen / totalImgCount) : 9999;
         const chapterCount = state.jsonChapters.length;
-        const isImageOnlyBook = totalImgCount > 0 && (chapterCount <= 2 || avgTextPerImage < 300);
-
-        console.log(`📊 Анализ книги: ${chapterCount} глав, ${Math.round(totalTextLen/1000)}K симв., ${totalImgCount} 🖼️, ${avgTextPerImage} симв/картинку`);
-        console.log(`📊 PDF toggle=${userWantsPdf}, isImageOnly=${isImageOnlyBook}, jsPDF=${JSPDFLoaded}`);
 
         // ============================================================
-        // РЕЖИМ 1: image-only → PDF из картинок
+        // РЕЖИМ 1 (по умолчанию): ZIP с images/ подпапкой
         // ============================================================
-        if(userWantsPdf && isImageOnlyBook && JSPDFLoaded){
-            logStep(`📕 Image-only книга → PDF (${totalImgCount} стр.)`);
-            try{
-                setStatus(`📕 Собираем PDF (${totalImgCount} стр.)...`, 'step');
-                const images = [...imagesMap.values()];
-                const pdfBlob = await buildPdfFromImages(images, state.bookTitle);
-                const fn = `${safe}.pdf`;
-                triggerDownload(pdfBlob, fn);
-                zipInfo.textContent = `✅ ${fn} (${(pdfBlob.size/1048576).toFixed(2)} MB)`;
-                zipInfo.style.color = '#4a8af4';
-                showResult(`📕 PDF (${images.length} стр.)`, fn, pdfBlob.size);
-                await saveProgress(true);
-                clearJsonCheckpoint();
-                state.isRunning = false; updateButtons();
-                return;
-            }catch(e){ logWarn(`⚠️ PDF не собрался: ${e.message} → fallback ZIP`); }
-        }
+        if(!userWantsPrint){
+            logStep(`📦 ZIP-режим (картинки в images/): ${chapterCount} глав, ${totalImgCount} 🖼️`);
 
-        // ============================================================
-        // РЕЖИМ 2: текстовая книга → HTML → PDF (ТЕКСТ!)
-        // ИСПРАВЛЕНО: 15.09.2026
-        // - ждём загрузки ВСЕХ картинок перед подменой src
-        // - проверяем что blob URL действительно готовы
-        // - логируем сколько картинок подменено
-        // - ревок blob URL в finally
-        // ============================================================
-        if(userWantsPdf && !isImageOnlyBook && totalTextLen > 3000 && JSPDFLoaded){
-            logStep(`📄 Текстовая книга (${Math.round(totalTextLen/1000)}K симв) → текстовый PDF`);
+            if(!state.zip) state.zip = new JSZip();
 
-            const objUrls = [];
-            try{
-                let htmlWithImages = buildBookHtml(
-                    state.jsonChapters,
-                    { title: state.bookTitle, author: state.bookAuthor }
-                );
-                console.log(`📄 HTML собран: ${Math.round(htmlWithImages.length/1024)} KB, картинок в map: ${imagesMap.size}`);
+            // Собираем HTML книги (ссылки на images/имя.jpg)
+            const html = buildBookHtml(state.jsonChapters, {
+                title: state.bookTitle,
+                author: state.bookAuthor
+            }, { forPrint: false });
+            state.zip.file(`${safe}.html`, html);
 
-                let replacedCount = 0;
-                for(const [name, blob] of imagesMap){
-                    if(!blob || blob.size < 100){
-                        console.warn(`⚠️ Картинка ${name} пустая (${blob?.size||0} байт) — пропускаем`);
-                        continue;
-                    }
-
-                    const objUrl = URL.createObjectURL(blob);
-                    objUrls.push(objUrl);
-
-                    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const re1 = new RegExp(`src="${escapedName}"`, 'g');
-                    const re2 = new RegExp(`src='${escapedName}'`, 'g');
-                    const beforeLen = htmlWithImages.length;
-                    htmlWithImages = htmlWithImages.replace(re1, `src="${objUrl}"`);
-                    htmlWithImages = htmlWithImages.replace(re2, `src="${objUrl}"`);
-                    if(htmlWithImages.length !== beforeLen) replacedCount++;
-                }
-                console.log(`🔗 Подменено src: ${replacedCount} из ${imagesMap.size} (blob URLs: ${objUrls.length})`);
-
-                const pdfBlob = await buildPdfFromHtml(htmlWithImages, state.bookTitle);
-                const fn = `${safe}.pdf`;
-                triggerDownload(pdfBlob, fn);
-                zipInfo.textContent = `✅ ${fn} (${(pdfBlob.size/1048576).toFixed(2)} MB)`;
-                zipInfo.style.color = '#4a8af4';
-                showResult(
-                    `📄 PDF (${Math.round(totalTextLen/1000)}K симв текста, ${replacedCount} 🖼️)`,
-                    fn,
-                    pdfBlob.size
-                );
-                await saveProgress(true);
-                clearJsonCheckpoint();
-                state.isRunning = false; updateButtons();
-                return;
-            }catch(e){
-                logWarn(`⚠️ HTML→PDF не собрался: ${e.message} → fallback ZIP`);
-                console.error('finalizeJsonBook PDF error:', e);
-            }finally{
-                for(const u of objUrls){
-                    try{ URL.revokeObjectURL(u); }catch(e){}
-                }
-                console.log(`♻️ Ревокнуто blob URL: ${objUrls.length}`);
+            // Картинки в подпапку images/
+            let imgCount = 0;
+            for(const [name, blob] of imagesMap){
+                state.zip.file(`images/${name}`, blob);
+                imgCount++;
             }
+            if(imgCount > 0) addLog(`✅ Картинок в images/: ${imgCount}`, 'db');
+
+            // Обложка + about.html + book_info.txt
+            addLog('🖼️ Качаем обложку и рецензии...', 'net');
+            const packed = await packMetaIntoZip(state.zip, state.artId, {
+                title: state.bookTitle, author: state.bookAuthor,
+                annotation: bookInfo.annotation, genres: bookInfo.genres,
+                publisher: bookInfo.publisher, publicationDate: bookInfo.publicationDate,
+                isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
+            });
+            if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
+
+            state.zip.file('book_info.txt',
+                `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\n` +
+                `Глав: ${chapterCount}\nПропущено: ${state.skippedChapters.length}\n` +
+                `Картинок: ${imgCount}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
+                `Формат: HTML (из JSON)\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
+                `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v74.0`
+            );
+
+            try{
+                const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+                const zn = `${safe}.zip`;
+                triggerDownload(zb, zn);
+                zipInfo.textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
+                showResult(`HTML+images (${chapterCount} глав, ${imgCount} 🖼️)`, zn, zb.size);
+                await saveProgress(true);
+                clearJsonCheckpoint();
+            }catch(e){ setStatus('❌ ' + e.message, 'err'); setPhase('error'); Sound.error(); }
+            state.isRunning = false; updateButtons();
+            return;
         }
 
         // ============================================================
-        // РЕЖИМ 3: ZIP с HTML + картинками
+        // РЕЖИМ 2 (🖨️ PDF принт ВКЛ): печать в PDF через браузер
         // ============================================================
-        logStep(`📦 ZIP с HTML (${chapterCount} глав, ${totalImgCount} 🖼️)`);
-        if(!state.zip) state.zip = new JSZip();
-        const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor });
-        state.zip.file(`${safe}.html`, html);
-
-        let imgCount = 0;
-        for(const [name, blob] of imagesMap){ state.zip.file(name, blob); imgCount++; }
-        if(imgCount > 0) addLog(`✅ Картинок в ZIP: ${imgCount}`, 'db');
-
-        addLog('🖼️ Качаем обложку и рецензии...', 'net');
-        const packed = await packMetaIntoZip(state.zip, state.artId, {
-            title: state.bookTitle, author: state.bookAuthor,
-            annotation: bookInfo.annotation, genres: bookInfo.genres,
-            publisher: bookInfo.publisher, publicationDate: bookInfo.publicationDate,
-            isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
-        });
-        if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-
-        state.zip.file('book_info.txt',
-            `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\n` +
-            `Глав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\n` +
-            `Картинок: ${imgCount}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
-            `Формат: HTML (из JSON)\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
-            `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`
-        );
+        logStep(`🖨️ PDF-принт режим: ${chapterCount} глав, ${totalTextLen} симв, ${totalImgCount} 🖼️`);
 
         try{
-            const zb = await state.zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-            const zn = `${safe}.zip`;
-            triggerDownload(zb, zn);
-            zipInfo.textContent = `✅ ${zn} (${(zb.size/1048576).toFixed(2)} MB)`;
-            showResult(`HTML (${state.jsonChapters.length} глав, ${imgCount} 🖼️)`, zn, zb.size);
-            await saveProgress(true);
-            clearJsonCheckpoint();
-        }catch(e){ setStatus('❌ ' + e.message, 'err'); setPhase('error'); Sound.error(); }
+            // HTML для печати (картинки без префикса — заменим на blob URL)
+            const html = buildBookHtml(state.jsonChapters, {
+                title: state.bookTitle,
+                author: state.bookAuthor
+            }, { forPrint: true });
+            console.log(`📄 HTML для печати: ${Math.round(html.length/1024)} KB, картинок: ${imagesMap.size}`);
+
+            const result = await buildPdfViaPrint(html, state.bookTitle, imagesMap);
+
+            if(result.ok){
+                setStatus('🖨️ Диалог печати открыт', 'ok');
+                setReadingStatus('🖨️ Сохрани PDF в диалоге печати');
+                addLog('💡 В диалоге печати выбери "Сохранить как PDF"', 'step');
+                addLog('💡 Принтер: "Сохранить как PDF" / "Microsoft Print to PDF"', 'step');
+                addLog('💡 Формат: A4 (по умолчанию)', 'step');
+
+                zipInfo.style.display = 'inline';
+                zipInfo.textContent = `🖨️ Сохрани PDF в диалоге`;
+                zipInfo.style.color = '#f0a500';
+
+                state.resultFormat = `🖨️ HTML→PDF (печать)`;
+                state.resultFilename = `${safe}.pdf`;
+                $('result_text').innerHTML = `
+                    <div class="ldl-result-line">🖨️ <b>Предпросмотр печати открыт</b></div>
+                    <div class="ldl-result-line">📊 ${chapterCount} глав, ${Math.round(totalTextLen/1000)}K симв, ${totalImgCount} 🖼️</div>
+                    <div class="ldl-result-line" style="color:#f0a500;margin-top:6px;">💡 В диалоге печати выбери:</div>
+                    <div class="ldl-result-line" style="padding-left:16px;">• Принтер: <b>"Сохранить как PDF"</b></div>
+                    <div class="ldl-result-line" style="padding-left:16px;">• Формат: <b>A4</b></div>
+                    <div class="ldl-result-line" style="padding-left:16px;">• Поля: <b>По умолчанию</b></div>
+                    <div class="ldl-result-line" style="padding-left:16px;">• ✅ Фоновая графика</div>
+                    <div class="ldl-result-line" style="font-size:10px;color:rgba(255,255,255,.5);margin-top:8px;">📁 Имя файла: ${safe}.pdf</div>
+                `;
+                $('result_banner').style.display = 'block';
+                setPhase('done'); setReadingStatus('🖨️ PDF через печать'); animateHand('🖨️');
+
+                try{
+                    if(!state.savingsApplied){
+                        SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
+                        pulseSavings();
+                        state.savingsApplied = true;
+                    }
+                }catch(e){}
+
+                Sound.complete();
+                await saveProgress(true);
+                clearJsonCheckpoint();
+                state.isRunning = false; updateButtons();
+                return;
+            } else {
+                // Fallback: попап заблокирован
+                logWarn(`⚠️ Печать не удалась (${result.reason}) → fallback на ZIP`);
+                addLog('⚠️ Разреши попапы для litres.ru и повтори', 'warn');
+                // Продолжаем в ZIP-режиме
+                if(!state.zip) state.zip = new JSZip();
+                const html2 = buildBookHtml(state.jsonChapters, {
+                    title: state.bookTitle,
+                    author: state.bookAuthor
+                }, { forPrint: false });
+                state.zip.file(`${safe}.html`, html2);
+                for(const [name, blob] of imagesMap){ state.zip.file(`images/${name}`, blob); }
+                const packed = await packMetaIntoZip(state.zip, state.artId, {
+                    title: state.bookTitle, author: state.bookAuthor,
+                    annotation: bookInfo.annotation, genres: bookInfo.genres,
+                    publisher: bookInfo.publisher, publicationDate: bookInfo.publicationDate,
+                    isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
+                });
+                const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
+                const zn = `${safe}.zip`;
+                triggerDownload(zb, zn);
+                showResult(`📦 ZIP (fallback, попап был заблокирован)`, zn, zb.size);
+                state.isRunning = false; updateButtons();
+                return;
+            }
+        }catch(e){
+            logWarn(`⚠️ Печать упала: ${e.message} → fallback на ZIP`);
+            console.error('buildPdfViaPrint error:', e);
+        }
+
+        // Финальный fallback (если что-то вообще сломалось)
         state.isRunning = false; updateButtons();
     }
 
@@ -2412,7 +2078,7 @@ ${revHtml}
             isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
         });
         if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: PDF\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`);
+        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: PDF\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v74.0`);
         try{
             const zb = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const zn = `${safe}.zip`;
@@ -2439,6 +2105,11 @@ ${revHtml}
     async function startSmart(){
         if(!state.isReady) return;
         if(state.phase==='done'||state.phase==='error') resetForRepeat();
+
+        // Читаем PDF принт в момент старта
+        state.printMode = false;
+        try{ state.printMode = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
+        console.log(`🖨️ PDF принт при старте: ${state.printMode ? 'ВКЛ' : 'ВЫКЛ'}`);
 
         if(state.isRunning && state.isPaused){
             state.isPaused=false; updateButtons(); Sound.click();
@@ -2665,27 +2336,59 @@ ${revHtml}
         });
     }
 
-    forceMode.addEventListener('change', function(){ state.forceMode=this.checked; forceStatus.textContent = this.checked?'⚡ вкл':'⏸ выкл'; if(this.checked) forceStatus.classList.add('on'); else forceStatus.classList.remove('on'); Sound.click(); });
-    try{ $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY)==='true'; }catch(e){}
-    $('autostart_mode').addEventListener('change', function(){ try{ localStorage.setItem(AUTOSTART_KEY, this.checked?'true':'false'); }catch(e){} Sound.click(); addLog(this.checked?'🚀 Автостарт ВКЛ':'🚀 Автостарт ВЫКЛ', 'ok'); });
+    forceMode.addEventListener('change', function(){
+        state.forceMode=this.checked;
+        forceStatus.textContent = this.checked?'⚡ вкл':'⏸ выкл';
+        if(this.checked) forceStatus.classList.add('on'); else forceStatus.classList.remove('on');
+        Sound.click();
+    });
 
-    if(pdfModeCheckbox){
-        try{ pdfModeCheckbox.checked = localStorage.getItem(PDF_MODE_KEY) !== 'false'; }catch(e){}
-        pdfModeCheckbox.addEventListener('change', function(){
-            try{ localStorage.setItem(PDF_MODE_KEY, this.checked?'true':'false'); }catch(e){}
+    // 🆕 v74: чекбокс PDF принт
+    if(printModeCheckbox){
+        try{ printModeCheckbox.checked = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
+        // обновляем индикатор
+        const updatePrintIndicator = () => {
+            const isOn = printModeCheckbox.checked;
+            if(isOn){
+                forceStatus.textContent = '🖨️ PDF принт';
+                forceStatus.classList.add('print-on');
+                forceStatus.classList.remove('on');
+            } else {
+                forceStatus.textContent = state.forceMode ? '⚡ вкл' : '⏸ выкл';
+                forceStatus.classList.remove('print-on');
+                if(state.forceMode) forceStatus.classList.add('on'); else forceStatus.classList.remove('on');
+            }
+        };
+        updatePrintIndicator();
+
+        printModeCheckbox.addEventListener('change', function(){
+            try{ localStorage.setItem(PRINT_MODE_KEY, this.checked ? 'true' : 'false'); }catch(e){}
             Sound.click();
-            addLog(this.checked?'📕 PDF-режим ВКЛ':'📦 PDF-режим ВЫКЛ (ZIP)', 'ok');
+            if(this.checked){
+                addLog('🖨️ PDF принт ВКЛ — книга будет открыта в предпросмотре печати', 'ok');
+                forceStatus.textContent = '🖨️ PDF принт';
+                forceStatus.classList.add('print-on');
+                forceStatus.classList.remove('on');
+            } else {
+                addLog('📦 PDF принт ВЫКЛ — книга будет скачана как ZIP с images/', 'ok');
+                forceStatus.textContent = state.forceMode ? '⚡ вкл' : '⏸ выкл';
+                forceStatus.classList.remove('print-on');
+                if(state.forceMode) forceStatus.classList.add('on'); else forceStatus.classList.remove('on');
+            }
         });
     }
 
+    try{ $('autostart_mode').checked = localStorage.getItem(AUTOSTART_KEY)==='true'; }catch(e){}
+    $('autostart_mode').addEventListener('change', function(){ try{ localStorage.setItem(AUTOSTART_KEY, this.checked?'true':'false'); }catch(e){} Sound.click(); addLog(this.checked?'🚀 Автостарт ВКЛ':'🚀 Автостарт ВЫКЛ', 'ok'); });
+
     window.downloaderUI = {
-        version: 'v72.0',
+        version: 'v74.0',
         start: startSmart, stop: stopDownload, state, Sound, addLog, SAVINGS, formatPrice,
         diagnoseStrategies,
         checkStrategy_Pdf, checkStrategy_ZipToc, checkStrategy_ZipDirect,
         checkStrategy_Audio, checkStrategy_Pdfjs, checkStrategy_Json,
         downloadWithProgress, detectBlobType, downloadViaAnchor,
-        buildPdfFromImages, buildPdfFromHtml,
+        buildPdfFromImages, buildPdfViaPrint,
         fetchBookInfo, fetchUserInfo, fetchJsonChapter, buildBookHtml, parseLitFile,
         litJsonToHtml, saveProgressToGitHub, fetchCoverBlob, fetchReviews,
         buildAboutHtml, packMetaIntoZip, openReaderInNewTab,
@@ -2741,8 +2444,10 @@ ${revHtml}
         animateHand('🖐️');
         updateButtons();
         updateTabTitle();
-        console.log('%c✅ LitRes Downloader v72.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        console.log('%c✅ LitRes Downloader v74.0 ЦАРСКАЯ готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
         console.log(`%c💰 Сэкономлено: ${formatPrice(SAVINGS.total)} (${SAVINGS.books} книг)`, 'color:#2ecc71;font-weight:bold;');
+        console.log('%c📦 ZIP-схема: book.html + images/ + cover + about', 'color:#4a8af4;font-weight:bold;');
+        console.log('%c🖨️ PDF принт (опция): печать в PDF средствами браузера', 'color:#f0a500;font-weight:bold;');
     }
 
     let currentArtId = artId;
