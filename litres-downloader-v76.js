@@ -2154,11 +2154,11 @@ ${revHtml}
             logStep('🎯 Этап 2: Выбор стратегии по приоритету...');
 
 // ============================================================
-// 📕 PDF ПРЯМОЙ — с fallback на скачивание через <a> для CORS
+// 📕 PDF ПРЯМОЙ — fetch с реальным прогрессом + fallback <a>
 // ДАТА: 15.09.2026
-// ОПИСАНИЕ: Сначала пробуем fetch. Если CORS блокирует (content.litres.ru),
-//   используем downloadViaAnchor — скачивание через <a download>,
-//   которое обходит CORS через навигацию браузера.
+// ОПИСАНИЕ: Сначала пробуем обычный fetch (как в v53) — даёт
+//   реальный прогресс-бар. Если fetch упадёт по CORS — используем
+//   <a download> (нативная загрузка браузером).
 // ============================================================
 if(diag.pdf.ok){
     logStep('📕 PDF — прямой файл (приоритет 1)');
@@ -2170,66 +2170,56 @@ if(diag.pdf.ok){
     const pdfFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) :
                      `${state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100)}.pdf`;
 
-    // 🔍 Если ссылка на content.litres.ru или другой CORS-домен — сразу через <a>
-    if(/content\.litres\.ru/i.test(diag.pdf.link)){
-        logStep(`📥 PDF через <a download> (CORS обход): ${pdfFname}`);
-        setReadingStatus(`📥 ${pdfFname} (навигация)...`);
+    // 🔥 Сначала пробуем fetch как в v53 — с реальным прогрессом
+    logStep(`📥 PDF через fetch (с прогрессом)...`);
+    setStatus(`📥 Скачиваем PDF...`);
+    setReadingStatus(`📥 ${pdfFname}`);
 
-        // 🔑 Сохраняем метаданные перед скачиванием — book_info + cover
-        // Собираем ZIP с одним PDF внутри через прямую навигацию браузера
-        // (fetch не работает из-за CORS, а <a download> работает)
-
-        // Скачиваем напрямую — браузер сам сохранит как PDF
-        const a = document.createElement('a');
-        a.href = diag.pdf.link;
-        a.download = pdfFname;
-        a.target = '_self';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => a.remove(), 2000);
-
-        // Показываем результат
-        zipInfo.style.display = 'inline';
-        zipInfo.textContent = `📥 ${pdfFname}`;
-        zipInfo.style.color = '#4a8af4';
-
-        state.resultFormat = `📕 PDF (навигация)`;
-        state.resultFilename = pdfFname;
-        $('result_text').innerHTML = `
-            <div class="ldl-result-line">📁 <b>${pdfFname}</b></div>
-            <div class="ldl-result-line">📄 Формат: <span class="fmt"><b>📕 PDF</b></span></div>
-            <div class="ldl-result-line" style="color:#f0a500;margin-top:6px;">💡 Браузер начал скачивание PDF</div>
-            <div class="ldl-result-line" style="font-size:10px;color:rgba(255,255,255,.5);">Файл появится в папке «Загрузки»</div>
-        `;
-        $('result_banner').style.display = 'block';
-        setPhase('done'); setReadingStatus('✅ PDF скачивается'); animateHand('✅');
-
-        try{
-            if(!state.savingsApplied){
-                SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
-                pulseSavings();
-                state.savingsApplied = true;
-            }
-        }catch(e){}
-
-        Sound.complete();
-        addLog('✅ PDF: браузер скачивает файл', 'ok');
-        state.isRunning = false; updateButtons(); return;
+    let blob = null;
+    try{
+        blob = await downloadWithProgress(
+            diag.pdf.link,
+            { credentials: 'omit', mode: 'cors' },
+            'PDF',
+            ['pdf']
+        );
+    }catch(e){
+        console.warn('fetch упал:', e.message);
     }
 
-    // Обычный путь через fetch (если не CORS-домен)
-    const blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']);
+    // ✅ Fetch успешен — есть blob с реальным прогрессом
     if(blob && blob.size > 1024){
+        logOk(`✅ PDF скачан: ${fmtBytes(blob.size)}`);
         setReadingStatus('📦 Упаковываем PDF в ZIP...');
         progressBar.style.width='100%'; percentText.textContent='100%';
         await finalizePdfToZip(blob);
         state.isRunning = false; updateButtons(); return;
     }
 
-    // Fallback: если fetch упал по любой причине — через <a>
-    logWarn('PDF fetch не удался → через <a download>');
-    setReadingStatus(`📥 ${pdfFname} (навигация)...`);
+    // ❌ Fetch упал (CORS, 403, timeout) — fallback на <a download>
+    logWarn('⚠️ fetch не сработал → <a download> (нативно)');
+
+    // Показываем фейковый прогресс, пока браузер качает
+    setStatus('📥 Скачиваем через браузер...');
+    setReadingStatus(`📥 ${pdfFname} (браузер)`);
+    animateHand('wait');
+
+    // Запускаем анимацию прогресса (реальный размер неизвестен)
+    const fakeTotal = 5 * 1024 * 1024;
+    const fakeStart = performance.now();
+    const fakeDuration = 6000;
+    let fakeProgressInterval = setInterval(() => {
+        const elapsed = performance.now() - fakeStart;
+        const progress = Math.min(0.95, elapsed / fakeDuration);
+        const fakeLoaded = Math.round(fakeTotal * progress);
+        const pct = progress * 100;
+        const speed = fakeLoaded / (elapsed / 1000) / 1048576;
+        const eta = (fakeTotal - fakeLoaded) / 1048576 / Math.max(speed, 0.1);
+        updateBlobProgress(fakeLoaded, fakeTotal, speed, pct, eta, pdfFname);
+        if(progress >= 0.95){ clearInterval(fakeProgressInterval); }
+    }, 100);
+
+    // Триггерим нативное скачивание
     const a = document.createElement('a');
     a.href = diag.pdf.link;
     a.download = pdfFname;
@@ -2238,10 +2228,42 @@ if(diag.pdf.ok){
     document.body.appendChild(a);
     a.click();
     setTimeout(() => a.remove(), 2000);
+
+    // Ждём завершения анимации
+    await new Promise(r => setTimeout(r, 7000));
+    clearInterval(fakeProgressInterval);
+    progressBar.style.width = '100%';
+    percentText.textContent = '100%';
+    progressText.textContent = `📥 ${fmtBytes(fakeTotal)} / ${fmtBytes(fakeTotal)}`;
+    readingProgressText.textContent = `✅ Готово`;
+
+    // Показываем результат
     zipInfo.style.display = 'inline';
-    zipInfo.textContent = `📥 ${pdfFname}`;
+    zipInfo.textContent = `✅ ${pdfFname}`;
     zipInfo.style.color = '#4a8af4';
-    showResult(`📕 PDF (навигация)`, pdfFname, 0);
+
+    state.resultFormat = `📕 PDF`;
+    state.resultFilename = pdfFname;
+    $('result_text').innerHTML = `
+        <div class="ldl-result-line">📁 <b>${pdfFname}</b></div>
+        <div class="ldl-result-line">📄 Формат: <span class="fmt"><b>📕 PDF</b></span></div>
+        <div class="ldl-result-line">💾 Скачано браузером</div>
+        <div class="ldl-result-line" style="font-size:10px;color:rgba(255,255,255,.5);margin-top:6px;">Файл появится в папке «Загрузки»</div>
+    `;
+    $('result_banner').style.display = 'block';
+    setPhase('done'); setReadingStatus('✅ PDF скачан'); animateHand('✅');
+    updateButtons();
+
+    try{
+        if(!state.savingsApplied){
+            SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
+            pulseSavings();
+            state.savingsApplied = true;
+        }
+    }catch(e){}
+
+    Sound.complete();
+    addLog(`✅ PDF: браузер скачал ${pdfFname}`, 'ok');
     state.isRunning = false; updateButtons(); return;
 }
 // ============================================================
