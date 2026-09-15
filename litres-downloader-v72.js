@@ -230,104 +230,115 @@
     // КОНЕЦ ФУНКЦИИ fetchFontB64 (15.09.2026)
     // ============================================================
 
-    // ============================================================
-    // ФУНКЦИЯ: ensureCyrillicFont (ИСПРАВЛЕННАЯ)
-    // ДАТА: 15.09.2026
-    // ОПИСАНИЕ: Загружает Roboto Regular + Bold с кириллицей для jsPDF.
-    //   v72: fallback на Bold если Regular нет; детальные логи;
-    //   проверка размера TTF (>50KB); очистка битого кэша localStorage.
-    // ============================================================
-    async function ensureCyrillicFont(pdf){
-        if(_fontsLoaded){
-            pdf.addFont(_fontsLoaded.regular, 'Roboto', 'normal');
-            pdf.addFont(_fontsLoaded.bold, 'Roboto', 'bold');
-            return true;
-        }
-
-        const BASES = [
-            'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/fonts/',
-            'https://raw.githubusercontent.com/dimasik-debug/Share/main/fonts/'
-        ];
-        const LS_R = 'litres_font_regular_b64', LS_B = 'litres_font_bold_b64';
-
-        let regularB64 = null, boldB64 = null;
-
-        // Шаг 1: localStorage
-        try{
-            regularB64 = localStorage.getItem(LS_R);
-            boldB64 = localStorage.getItem(LS_B);
-            if(regularB64 && regularB64.length < 50000){
-                console.warn(`⚠️ Кэш Regular повреждён (${regularB64.length} симв) — сбрасываем`);
-                localStorage.removeItem(LS_R);
-                regularB64 = null;
-            }
-            if(boldB64 && boldB64.length < 50000){
-                console.warn(`⚠️ Кэш Bold повреждён (${boldB64.length} симв) — сбрасываем`);
-                localStorage.removeItem(LS_B);
-                boldB64 = null;
-            }
-            if(regularB64) console.log(`✅ Roboto-Regular из кэша (${Math.round(regularB64.length/1024)} KB base64)`);
-            if(boldB64) console.log(`✅ Roboto-Bold из кэша (${Math.round(boldB64.length/1024)} KB base64)`);
-        }catch(e){
-            console.warn('⚠️ localStorage недоступен:', e.message);
-        }
-
-        // Шаг 2: загрузка
-        async function loadOne(name){
-            for(const base of BASES){
-                const url = base + name;
-                try{
-                    console.log(`⬇️ Пробуем ${url}`);
-                    const b64 = await fetchFontB64(url);
-                    if(!b64 || b64.length < 50000){
-                        console.warn(`⚠️ ${name}: слишком маленький файл (${b64?.length||0} симв) — брак`);
-                        continue;
-                    }
-                    console.log(`✅ ${name}: ${Math.round(b64.length/1024)} KB base64 с ${base.split('/')[2]}`);
-                    return b64;
-                }catch(e){
-                    console.warn(`⚠️ ${name}: ${base.split('/')[2]} → ${e.message}`);
-                }
-            }
-            return null;
-        }
-
-        if(!regularB64){
-            regularB64 = await loadOne('Roboto-Regular.ttf');
-            if(regularB64){
-                try{ localStorage.setItem(LS_R, regularB64); }catch(e){}
-            }
-        }
-
-        if(!boldB64){
-            boldB64 = await loadOne('Roboto-Bold.ttf');
-            if(boldB64){
-                try{ localStorage.setItem(LS_B, boldB64); }catch(e){}
-            }
-        }
-
-        // Шаг 3: fallback
-        if(!regularB64 && boldB64){
-            console.warn('⚠️ Roboto-Regular не найден — используем Bold как Regular');
-            regularB64 = boldB64;
-        }
-        if(!boldB64 && regularB64){
-            console.warn('⚠️ Roboto-Bold не найден — используем Regular как Bold');
-            boldB64 = regularB64;
-        }
-        if(!regularB64){
-            throw new Error('Ни Roboto-Regular, ни Roboto-Bold не загрузились — проверь папку fonts/ в репе');
-        }
-
-        pdf.addFont(regularB64, 'Roboto', 'normal');
-        pdf.addFont(boldB64, 'Roboto', 'bold');
-        _fontsLoaded = { regular: regularB64, bold: boldB64 };
-        console.log(`✅ Roboto зарегистрирован в jsPDF (Regular + Bold)`);
+   // ============================================================
+// ФУНКЦИЯ: ensureCyrillicFont (ФИКС v71.1)
+// ДАТА: 15.09.2026
+// ОПИСАНИЕ: Регистрирует Roboto Regular + Bold в jsPDF.
+//   ФИКС: передаём ArrayBuffer вместо base64-строки.
+//   jsPDF v2.5.1 путает длинный base64 с URL и пытается его скачать
+//   через fetch → net::ERR_CONNECTION_CLOSED.
+//   Решение: декодируем base64 → Uint8Array → ArrayBuffer.
+// ============================================================
+async function ensureCyrillicFont(pdf){
+    if(_fontsLoaded){
+        pdf.addFont(_fontsLoaded.regular, 'Roboto', 'normal');
+        pdf.addFont(_fontsLoaded.bold, 'Roboto', 'bold');
         return true;
     }
-    // ============================================================
-    // КОНЕЦ ФУНКЦИИ ensureCyrillicFont (15.09.2026)
-    // ============================================================
+
+    const BASES = [
+        'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/fonts/',
+        'https://raw.githubusercontent.com/dimasik-debug/Share/main/fonts/'
+    ];
+    const LS_R = 'litres_font_regular_b64', LS_B = 'litres_font_bold_b64';
+
+    // --- base64 → Uint8Array ---
+    function b64ToUint8(b64){
+        const bin = atob(b64);
+        const len = bin.length;
+        const bytes = new Uint8Array(len);
+        for(let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+    }
+
+    let regularB64 = null, boldB64 = null;
+
+    // --- localStorage ---
+    try{
+        regularB64 = localStorage.getItem(LS_R);
+        boldB64 = localStorage.getItem(LS_B);
+        if(regularB64 && regularB64.length < 50000){
+            console.warn(`⚠️ Кэш Regular повреждён — сбрасываем`);
+            localStorage.removeItem(LS_R);
+            regularB64 = null;
+        }
+        if(boldB64 && boldB64.length < 50000){
+            console.warn(`⚠️ Кэш Bold повреждён — сбрасываем`);
+            localStorage.removeItem(LS_B);
+            boldB64 = null;
+        }
+        if(regularB64) console.log(`✅ Roboto-Regular из кэша (${Math.round(regularB64.length/1024)} KB base64)`);
+        if(boldB64) console.log(`✅ Roboto-Bold из кэша (${Math.round(boldB64.length/1024)} KB base64)`);
+    }catch(e){
+        console.warn('⚠️ localStorage недоступен:', e.message);
+    }
+
+    // --- загрузка ---
+    async function loadOne(name){
+        for(const base of BASES){
+            const url = base + name;
+            try{
+                console.log(`⬇️ Пробуем ${url}`);
+                const b64 = await fetchFontB64(url);
+                if(!b64 || b64.length < 50000){
+                    console.warn(`⚠️ ${name}: слишком маленький файл`);
+                    continue;
+                }
+                console.log(`✅ ${name}: ${Math.round(b64.length/1024)} KB base64`);
+                return b64;
+            }catch(e){
+                console.warn(`⚠️ ${name}: ${base.split('/')[2]} → ${e.message}`);
+            }
+        }
+        return null;
+    }
+
+    if(!regularB64){
+        regularB64 = await loadOne('Roboto-Regular.ttf');
+        if(regularB64){ try{ localStorage.setItem(LS_R, regularB64); }catch(e){} }
+    }
+    if(!boldB64){
+        boldB64 = await loadOne('Roboto-Bold.ttf');
+        if(boldB64){ try{ localStorage.setItem(LS_B, boldB64); }catch(e){} }
+    }
+
+    // --- fallback ---
+    if(!regularB64 && boldB64){
+        console.warn('⚠️ Roboto-Regular не найден — используем Bold как Regular');
+        regularB64 = boldB64;
+    }
+    if(!boldB64 && regularB64){
+        console.warn('⚠️ Roboto-Bold не найден — используем Regular как Bold');
+        boldB64 = regularB64;
+    }
+    if(!regularB64) throw new Error('Ни Roboto-Regular, ни Roboto-Bold не загрузились');
+
+    // --- 🔥 ФИКС: конвертим в Uint8Array и кэшируем ---
+    console.log('🔧 Конвертим base64 → Uint8Array...');
+    const regularBytes = b64ToUint8(regularB64);
+    const boldBytes = b64ToUint8(boldB64);
+    console.log(`✅ Regular: ${regularBytes.length} байт, Bold: ${boldBytes.length} байт`);
+
+    pdf.addFont(regularBytes, 'Roboto', 'normal');
+    pdf.addFont(boldBytes, 'Roboto', 'bold');
+
+    _fontsLoaded = { regular: regularBytes, bold: boldBytes };
+    console.log(`✅ Roboto зарегистрирован в jsPDF (Regular + Bold)`);
+    return true;
+}
+// ============================================================
+// КОНЕЦ ФУНКЦИИ ensureCyrillicFont (15.09.2026)
+// ============================================================
 
     // ═══ URL / Session ═══
     const urlParams = new URLSearchParams(window.location.search);
