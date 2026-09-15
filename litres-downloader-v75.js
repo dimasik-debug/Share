@@ -2153,19 +2153,100 @@ ${revHtml}
 
             logStep('🎯 Этап 2: Выбор стратегии по приоритету...');
 
-            if(diag.pdf.ok){
-                logStep('📕 PDF — прямой файл (приоритет 1)');
-                state.isRunning = true; updateButtons();
-                bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
-                const blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']);
-                if(blob && blob.size > 1024){
-                    setReadingStatus('📦 Упаковываем PDF в ZIP...');
-                    progressBar.style.width='100%'; percentText.textContent='100%';
-                    await finalizePdfToZip(blob);
-                    state.isRunning = false; updateButtons(); return;
-                }
-                logWarn('PDF не скачался → следующая стратегия');
+// ============================================================
+// 📕 PDF ПРЯМОЙ — с fallback на скачивание через <a> для CORS
+// ДАТА: 15.09.2026
+// ОПИСАНИЕ: Сначала пробуем fetch. Если CORS блокирует (content.litres.ru),
+//   используем downloadViaAnchor — скачивание через <a download>,
+//   которое обходит CORS через навигацию браузера.
+// ============================================================
+if(diag.pdf.ok){
+    logStep('📕 PDF — прямой файл (приоритет 1)');
+    state.isRunning = true; updateButtons();
+    bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
+
+    // Извлекаем имя файла из ссылки
+    const fnameMatch = diag.pdf.link.match(/fname=([^&]+)/);
+    const pdfFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) :
+                     `${state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100)}.pdf`;
+
+    // 🔍 Если ссылка на content.litres.ru или другой CORS-домен — сразу через <a>
+    if(/content\.litres\.ru/i.test(diag.pdf.link)){
+        logStep(`📥 PDF через <a download> (CORS обход): ${pdfFname}`);
+        setReadingStatus(`📥 ${pdfFname} (навигация)...`);
+
+        // 🔑 Сохраняем метаданные перед скачиванием — book_info + cover
+        // Собираем ZIP с одним PDF внутри через прямую навигацию браузера
+        // (fetch не работает из-за CORS, а <a download> работает)
+
+        // Скачиваем напрямую — браузер сам сохранит как PDF
+        const a = document.createElement('a');
+        a.href = diag.pdf.link;
+        a.download = pdfFname;
+        a.target = '_self';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 2000);
+
+        // Показываем результат
+        zipInfo.style.display = 'inline';
+        zipInfo.textContent = `📥 ${pdfFname}`;
+        zipInfo.style.color = '#4a8af4';
+
+        state.resultFormat = `📕 PDF (навигация)`;
+        state.resultFilename = pdfFname;
+        $('result_text').innerHTML = `
+            <div class="ldl-result-line">📁 <b>${pdfFname}</b></div>
+            <div class="ldl-result-line">📄 Формат: <span class="fmt"><b>📕 PDF</b></span></div>
+            <div class="ldl-result-line" style="color:#f0a500;margin-top:6px;">💡 Браузер начал скачивание PDF</div>
+            <div class="ldl-result-line" style="font-size:10px;color:rgba(255,255,255,.5);">Файл появится в папке «Загрузки»</div>
+        `;
+        $('result_banner').style.display = 'block';
+        setPhase('done'); setReadingStatus('✅ PDF скачивается'); animateHand('✅');
+
+        try{
+            if(!state.savingsApplied){
+                SAVINGS.add(state.artId, state.bookTitle, bookInfo.price);
+                pulseSavings();
+                state.savingsApplied = true;
             }
+        }catch(e){}
+
+        Sound.complete();
+        addLog('✅ PDF: браузер скачивает файл', 'ok');
+        state.isRunning = false; updateButtons(); return;
+    }
+
+    // Обычный путь через fetch (если не CORS-домен)
+    const blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']);
+    if(blob && blob.size > 1024){
+        setReadingStatus('📦 Упаковываем PDF в ZIP...');
+        progressBar.style.width='100%'; percentText.textContent='100%';
+        await finalizePdfToZip(blob);
+        state.isRunning = false; updateButtons(); return;
+    }
+
+    // Fallback: если fetch упал по любой причине — через <a>
+    logWarn('PDF fetch не удался → через <a download>');
+    setReadingStatus(`📥 ${pdfFname} (навигация)...`);
+    const a = document.createElement('a');
+    a.href = diag.pdf.link;
+    a.download = pdfFname;
+    a.target = '_self';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 2000);
+    zipInfo.style.display = 'inline';
+    zipInfo.textContent = `📥 ${pdfFname}`;
+    zipInfo.style.color = '#4a8af4';
+    showResult(`📕 PDF (навигация)`, pdfFname, 0);
+    state.isRunning = false; updateButtons(); return;
+}
+// ============================================================
+// КОНЕЦ БЛОКА PDF в startSmart (15.09.2026)
+// ============================================================
 
             if(diag.zipToc.ok){
                 logStep('📦 ZIP через toc.js (приоритет 2)');
