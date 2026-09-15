@@ -1,14 +1,16 @@
 /**
- * LitRes Downloader v70.0 — TEXT PDF + FULL REFACTOR
+ * LitRes Downloader v72.0 — TEXT PDF + FIX CYRILLIC + IMAGES
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
  * 📕 PDF постранично: JPG/GIF → ZIP
  * 📕 PDF прямой (pdfjs/*.js + fname=*.pdf)
- * 📄 PDF BUILDER: РЕАЛЬНЫЙ ТЕКСТ (не canvas!) — v70
+ * 📄 PDF BUILDER: РЕАЛЬНЫЙ ТЕКСТ (не canvas!) — v72
  *    → выделяемый, копируемый, кириллица через Roboto
  *    → картинки не рвутся между страницами
  *    → размер в 10-20 раз меньше canvas-версии
+ * 🔤 Roboto Regular + Bold с fallback (если Regular нет → Bold как Regular)
+ * 🖼️ Картинки: авто-расширение .jpg, 6 URL-вариантов, blob URL с ревоком
  * 📕 IMAGE PDF: книги-картинки → PDF (jsPDF)
  * 📦 ZIP fallback с HTML + картинками
  * 🏁 SMART EOF: 5×404 = конец книги
@@ -16,7 +18,6 @@
  * 🚫 CORS DETECT: content.litres.ru → быстрый выход
  * 🎭 ZIP MASK DETECT: LitRes маскирует JSON под *.zip
  * 🖼️ COVER + ABOUT.HTML + REVIEWS в каждый ZIP
- * 🖼️ JSON IMAGES: качаем картинки из глав
  * 💰 SAVINGS: счётчик сэкономленных рублей
  * 🔬 DIAGNOSTICS: ПОСЛЕДОВАТЕЛЬНО (ускорен старт ×3)
  * 📚 LIBS: JSZip + jsPDF + Roboto (Regular/Bold)
@@ -28,8 +29,8 @@
  * (c) 2026 Diminssoft
  */
 
-(function fullDownloaderV70() {
-    console.log('%c🚀 LitRes Downloader v70.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+(function fullDownloaderV72() {
+    console.log('%c🚀 LitRes Downloader v72.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -43,7 +44,7 @@
      'litres-downloader-v53.js','litres-downloader-v54.js','litres-downloader-v55.js','litres-downloader-v56.js',
      'litres-downloader-v57.js','litres-downloader-v58.js','litres-downloader-v58.1.js','litres-downloader-v59.js',
      'litres-downloader-v60.js','litres-downloader-v60.1.js','litres-downloader-v60.2.js','litres-downloader-v62.js',
-     'litres-downloader-v63.js','litres-downloader-v69.js'
+     'litres-downloader-v63.js','litres-downloader-v69.js','litres-downloader-v70.js','litres-downloader-v70.1.js'
     ].forEach(f => fetch('https://purge.jsdelivr.net/gh/dimasik-debug/Share@main/' + f, { mode: 'no-cors' }).catch(()=>{}));
 
     // ═══ 🔊 SOUND ═══
@@ -204,10 +205,15 @@
     ], () => { JSPDFLoaded = true; }, () => { console.warn('⚠️ jsPDF не загрузился'); }, 'jsPDF');
 
     // ============================================================
-    // 🔤 Roboto с кириллицей (Regular + Bold)
+    // 🔤 Roboto с кириллицей (Regular + Bold) — v72
     // ============================================================
     let _fontsLoaded = null;
 
+    // ============================================================
+    // ФУНКЦИЯ: fetchFontB64
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Качает TTF и конвертит в base64 (чанками по 0x8000).
+    // ============================================================
     async function fetchFontB64(url){
         const r = await fetch(url, { mode:'cors' });
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -220,47 +226,108 @@
         }
         return btoa(bin);
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ fetchFontB64 (15.09.2026)
+    // ============================================================
 
+    // ============================================================
+    // ФУНКЦИЯ: ensureCyrillicFont (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Загружает Roboto Regular + Bold с кириллицей для jsPDF.
+    //   v72: fallback на Bold если Regular нет; детальные логи;
+    //   проверка размера TTF (>50KB); очистка битого кэша localStorage.
+    // ============================================================
     async function ensureCyrillicFont(pdf){
         if(_fontsLoaded){
             pdf.addFont(_fontsLoaded.regular, 'Roboto', 'normal');
             pdf.addFont(_fontsLoaded.bold, 'Roboto', 'bold');
             return true;
         }
+
         const BASES = [
             'https://cdn.jsdelivr.net/gh/dimasik-debug/Share@main/fonts/',
             'https://raw.githubusercontent.com/dimasik-debug/Share/main/fonts/'
         ];
         const LS_R = 'litres_font_regular_b64', LS_B = 'litres_font_bold_b64';
+
         let regularB64 = null, boldB64 = null;
+
+        // Шаг 1: localStorage
         try{
             regularB64 = localStorage.getItem(LS_R);
             boldB64 = localStorage.getItem(LS_B);
-        }catch(e){}
+            if(regularB64 && regularB64.length < 50000){
+                console.warn(`⚠️ Кэш Regular повреждён (${regularB64.length} симв) — сбрасываем`);
+                localStorage.removeItem(LS_R);
+                regularB64 = null;
+            }
+            if(boldB64 && boldB64.length < 50000){
+                console.warn(`⚠️ Кэш Bold повреждён (${boldB64.length} симв) — сбрасываем`);
+                localStorage.removeItem(LS_B);
+                boldB64 = null;
+            }
+            if(regularB64) console.log(`✅ Roboto-Regular из кэша (${Math.round(regularB64.length/1024)} KB base64)`);
+            if(boldB64) console.log(`✅ Roboto-Bold из кэша (${Math.round(boldB64.length/1024)} KB base64)`);
+        }catch(e){
+            console.warn('⚠️ localStorage недоступен:', e.message);
+        }
 
+        // Шаг 2: загрузка
         async function loadOne(name){
             for(const base of BASES){
-                try{ return await fetchFontB64(base + name); }catch(e){}
+                const url = base + name;
+                try{
+                    console.log(`⬇️ Пробуем ${url}`);
+                    const b64 = await fetchFontB64(url);
+                    if(!b64 || b64.length < 50000){
+                        console.warn(`⚠️ ${name}: слишком маленький файл (${b64?.length||0} симв) — брак`);
+                        continue;
+                    }
+                    console.log(`✅ ${name}: ${Math.round(b64.length/1024)} KB base64 с ${base.split('/')[2]}`);
+                    return b64;
+                }catch(e){
+                    console.warn(`⚠️ ${name}: ${base.split('/')[2]} → ${e.message}`);
+                }
             }
             return null;
         }
 
         if(!regularB64){
             regularB64 = await loadOne('Roboto-Regular.ttf');
-            if(regularB64){ try{ localStorage.setItem(LS_R, regularB64); }catch(e){} }
+            if(regularB64){
+                try{ localStorage.setItem(LS_R, regularB64); }catch(e){}
+            }
         }
+
         if(!boldB64){
             boldB64 = await loadOne('Roboto-Bold.ttf');
-            if(boldB64){ try{ localStorage.setItem(LS_B, boldB64); }catch(e){} }
+            if(boldB64){
+                try{ localStorage.setItem(LS_B, boldB64); }catch(e){}
+            }
         }
-        if(!regularB64) throw new Error('Roboto-Regular не найден');
-        if(!boldB64) boldB64 = regularB64;
+
+        // Шаг 3: fallback
+        if(!regularB64 && boldB64){
+            console.warn('⚠️ Roboto-Regular не найден — используем Bold как Regular');
+            regularB64 = boldB64;
+        }
+        if(!boldB64 && regularB64){
+            console.warn('⚠️ Roboto-Bold не найден — используем Regular как Bold');
+            boldB64 = regularB64;
+        }
+        if(!regularB64){
+            throw new Error('Ни Roboto-Regular, ни Roboto-Bold не загрузились — проверь папку fonts/ в репе');
+        }
 
         pdf.addFont(regularB64, 'Roboto', 'normal');
         pdf.addFont(boldB64, 'Roboto', 'bold');
         _fontsLoaded = { regular: regularB64, bold: boldB64 };
+        console.log(`✅ Roboto зарегистрирован в jsPDF (Regular + Bold)`);
         return true;
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ ensureCyrillicFont (15.09.2026)
+    // ============================================================
 
     // ═══ URL / Session ═══
     const urlParams = new URLSearchParams(window.location.search);
@@ -413,13 +480,11 @@
                     if(child.nodeType === Node.ELEMENT_NODE){
                         const tag = child.tagName.toLowerCase();
                         if(!ALLOWED.has(tag)){
-                            // разворачиваем тег, оставляем содержимое
                             const frag = document.createDocumentFragment();
                             while(child.firstChild) frag.appendChild(child.firstChild);
                             child.replaceWith(frag);
                             continue;
                         }
-                        // срезаем все атрибуты
                         for(const attr of [...child.attributes]) child.removeAttribute(attr.name);
                         walk(child);
                     } else if(child.nodeType === Node.COMMENT_NODE){
@@ -775,7 +840,7 @@
     }
 
     // ============================================================
-    // diagnoseStrategies — ПОСЛЕДОВАТЕЛЬНО (v70)
+    // diagnoseStrategies — ПОСЛЕДОВАТЕЛЬНО (v72)
     // ============================================================
     async function diagnoseStrategies(){
         const fid = state.fileId || bookInfo.fileId;
@@ -785,7 +850,7 @@
             return null;
         }
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
-        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v70.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
+        console.log('%c🔬 ДИАГНОСТИКА СТРАТЕГИЙ v72.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
         console.log('%c═══════════════════════════════════════════════════════', 'color:#4a8af4');
         console.log(`📖 Книга: "${bookInfo.title}"`);
         console.log(`🆔 artId=${artId}, fileId=${fid}`);
@@ -815,10 +880,8 @@
             }catch(e){
                 results[key] = { ok:false, note:e.message, name:label };
             }
-            // Ранний выход: если PDF доступен — остальное не так критично
             if(key === 'pdf' && results[key].ok){
-                console.log(`✅ PDF доступен — прекращаем диагностику (приоритет 1)`);
-                // но всё же проверим остальные чтобы знать fallback — оставим, если хочешь ускорить, раскомментируй break
+                console.log(`✅ PDF доступен — приоритет 1`);
             }
         }
 
@@ -853,6 +916,13 @@
     function parseLitFile(t){ const c=t.trim().replace(/;\s*$/,''); try{ return new Function('return ('+c+')')(); }catch(e){ const s=c.indexOf('['), e2=c.lastIndexOf(']'); if(s>=0&&e2>s) return new Function('return ('+c.slice(s,e2+1)+')')(); throw e; } }
     function escHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+    // ============================================================
+    // ФУНКЦИЯ: litJsonToHtml (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Конвертит JSON-главу LitRes в HTML.
+    //   v72: если у картинки нет расширения — добавляем .jpg
+    //   (litres часто отдаёт src="img_001" без .jpg, и extractImageNames их теряет).
+    // ============================================================
     function litJsonToHtml(n){
         if(!Array.isArray(n)){
             if(typeof n==='string') return escHtml(n);
@@ -862,14 +932,24 @@
         return n.map(x=>{
             if(typeof x==='string') return escHtml(x);
             if(!x||!x.t) return '';
+
+            // --- Обработка картинок ---
             if(x.t === 'img'){
                 let file = x.s || '';
                 if(!file && x.src && /\.(?:jpe?g|png|gif|webp|svg|bmp)$/i.test(x.src)) file = x.src;
                 if(!file) return '';
+
+                // v72: добавляем .jpg если расширения нет
+                if(!/\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(file)){
+                    file += '.jpg';
+                }
+
                 const w = x.w ? ` width="${x.w}"` : '';
                 const h = x.h ? ` height="${x.h}"` : '';
                 return `<img src="${escHtml(file)}" alt="" loading="lazy"${w}${h} class="litres-img">`;
             }
+
+            // --- Обработка текстовых узлов ---
             const i = litJsonToHtml(x.c||[]);
             switch(x.t){
                 case 'title':    return `<h2>${i}</h2>`;
@@ -882,6 +962,9 @@
             }
         }).join('');
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ litJsonToHtml (15.09.2026)
+    // ============================================================
 
     async function fetchJsonChapter(num){
         const fid=state.fileId; if(!fid) return { status:'error' };
@@ -921,76 +1004,171 @@ img.litres-img{max-width:100%;height:auto;display:block;margin:24px auto;border-
 <h1 class="book-title">${st}</h1>
 <div class="meta">✍️ ${sa}</div>
 ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v70.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
+<div class="footer">📚 LitRes Downloader v72.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
 </body></html>`;
     }
 
     // ============================================================
-    // extractImageNames — regex вынесен в константу
+    // КОНСТАНТА: IMG_RE (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Regex для поиска <img src="..."> — БЕЗ требования расширения.
+    //   v72: ловит картинки без .jpg/.png (litres часто отдаёт "img_001").
     // ============================================================
-    const IMG_RE = /<img[^>]+src\s*=\s*["']([^"']+\.(?:jpe?g|png|gif|webp|svg|bmp))["']/gi;
+    const IMG_RE = /<img[^>]+src\s*=\s*["']([^"']+)["']/gi;
+
+    // ============================================================
+    // ФУНКЦИЯ: extractImageNames (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Извлекает имена картинок из HTML.
+    //   v72: если расширения нет — добавляем .jpg; фильтруем data:/blob:.
+    // ============================================================
     function extractImageNames(html){
         const names = new Set();
         IMG_RE.lastIndex = 0;
         let m;
         while((m = IMG_RE.exec(html)) !== null){
-            const name = m[1].replace(/^\.\//, '').replace(/^.*\//, '').trim();
-            if(!name || name.startsWith('data:') || name.length < 3) continue;
+            let name = m[1].replace(/^\.\//, '').replace(/^.*\//, '').trim();
+            if(!name || name.length < 3) continue;
+            if(name.startsWith('data:')) continue;
+            if(name.startsWith('blob:')) continue;
+
+            // v72: если расширения нет — добавляем .jpg
+            if(!/\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)){
+                name += '.jpg';
+            }
             names.add(name);
         }
         return [...names];
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ extractImageNames (15.09.2026)
+    // ============================================================
 
+    // ============================================================
+    // ФУНКЦИЯ: fetchBookImage (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Качает картинку с litres по имени.
+    //   v72: больше URL-вариантов; если .jpg не сработал — пробуем без расширения;
+    //   детальные логи каждого URL.
+    // ============================================================
     async function fetchBookImage(imgName){
         const cleanName = imgName.replace(/^\.\//, '').replace(/^.*\//, '').trim();
         if(!state.fileId) return null;
+
         const base = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json`;
-        const urls = [`${base}/${cleanName}`, `${base}/images/${cleanName}`, `${base}/img/${cleanName}`];
+        const nameNoExt = cleanName.replace(/\.(jpe?g|png|gif|webp|svg|bmp)$/i, '');
+        const urls = [
+            `${base}/${cleanName}`,
+            `${base}/${nameNoExt}`,
+            `${base}/images/${cleanName}`,
+            `${base}/images/${nameNoExt}`,
+            `${base}/img/${cleanName}`,
+            `${base}/img/${nameNoExt}`
+        ];
+
         for(const url of urls){
             try{
                 const r = await fetchWithTimeout(url, { credentials: 'include' }, 20000);
-                if(!r.ok) continue;
+                if(!r.ok){
+                    console.log(`🔍 ${cleanName}: ${url.substring(url.lastIndexOf('/')+1)} → ${r.status}`);
+                    continue;
+                }
                 const blob = await r.blob();
                 if(blob.size < 100) continue;
+
                 const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-                const isImg = (head[0]===0xFF&&head[1]===0xD8)||(head[0]===0x89&&head[1]===0x50)||(head[0]===0x47&&head[1]===0x49)||(head[0]===0x52&&head[1]===0x49);
-                if(!isImg) continue;
+                const isImg =
+                    (head[0]===0xFF && head[1]===0xD8) ||
+                    (head[0]===0x89 && head[1]===0x50) ||
+                    (head[0]===0x47 && head[1]===0x49) ||
+                    (head[0]===0x52 && head[1]===0x49);
+                if(!isImg){
+                    console.log(`🔍 ${cleanName}: не картинка (магия ${head[0].toString(16)} ${head[1].toString(16)})`);
+                    continue;
+                }
+
+                console.log(`✅ Картинка ${cleanName}: ${blob.size} байт с ${url.substring(0, 80)}`);
                 return { name: cleanName, blob };
-            }catch(e){}
+            }catch(e){
+                console.log(`🔍 ${cleanName}: ${e.message}`);
+            }
         }
+        console.warn(`❌ Картинка ${cleanName} не скачалась ни по одному URL`);
         return null;
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ fetchBookImage (15.09.2026)
+    // ============================================================
 
+    // ============================================================
+    // ФУНКЦИЯ: downloadAllBookImages (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Качает все картинки из глав.
+    //   v72: детальные логи имён; адаптивная конкурентность; список неудачных.
+    // ============================================================
     async function downloadAllBookImages(chapters){
         const allNames = new Set();
-        for(const html of chapters) for(const n of extractImageNames(html)) allNames.add(n);
-        if(allNames.size === 0){ addLog('🖼️ Картинок не найдено', 'info'); return new Map(); }
+        for(const html of chapters){
+            for(const n of extractImageNames(html)) allNames.add(n);
+        }
+
+        if(allNames.size === 0){
+            addLog('🖼️ Картинок не найдено', 'info');
+            console.log('🔍 extractImageNames вернул 0 — проверь JSON-главы:');
+            if(chapters.length > 0){
+                console.log('   Первая глава (первые 2000 симв):', chapters[0].substring(0, 2000));
+            }
+            return new Map();
+        }
+
         const list = [...allNames];
-        const sample = list.slice(0, 3).join(', ');
-        const more = list.length > 3 ? ` … ещё ${list.length - 3}` : '';
+        const sample = list.slice(0, 5).join(', ');
+        const more = list.length > 5 ? ` … ещё ${list.length - 5}` : '';
         addLog(`🖼️ Найдено: ${list.length} [${sample}${more}]`, 'net');
-        setReadingStatus(`🖼️ 0/${list.length}`); animateHand('wait');
+        console.log('🖼️ Полный список картинок:', list);
+
+        setReadingStatus(`🖼️ 0/${list.length}`);
+        animateHand('wait');
+
         const result = new Map();
-        let done = 0, failed = 0;
+        const failed = [];
+        let done = 0;
+
         const CONCURRENCY = (navigator.connection?.effectiveType === '4g') ? 6 : 4;
+        console.log(`🖼️ Конкурентность: ${CONCURRENCY} (connection: ${navigator.connection?.effectiveType || 'unknown'})`);
+
         for(let i = 0; i < list.length; i += CONCURRENCY){
             if(state.isStopped) break;
             const batch = list.slice(i, i + CONCURRENCY);
             const blobs = await Promise.all(batch.map(n => fetchBookImage(n)));
+
             blobs.forEach((b, idx) => {
-                if(b){ result.set(b.name, b.blob); done++; }
-                else { failed++; logWarn(`🖼️ Не скачалась: ${batch[idx]}`); }
+                if(b){
+                    result.set(b.name, b.blob);
+                    done++;
+                } else {
+                    failed.push(batch[idx]);
+                    logWarn(`🖼️ Не скачалась: ${batch[idx]}`);
+                }
             });
-            const pct = Math.round((done + failed) / list.length * 100);
+
+            const pct = Math.round((done + failed.length) / list.length * 100);
             setReadingStatus(`🖼️ ${done}/${list.length} (${pct}%)`);
-            readingProgressText.textContent = `🖼️ ${done} ok · ${failed} fail`;
+            readingProgressText.textContent = `🖼️ ${done} ok · ${failed.length} fail`;
             progressBar.style.width = `${pct}%`;
             percentText.textContent = `${pct}%`;
             updateMini();
         }
-        addLog(`✅ Картинок: ${done}/${list.length}${failed?` (ошибок: ${failed})`:''}`, done>0?'ok':'warn');
+
+        if(failed.length > 0){
+            console.warn('❌ Неудачные картинки:', failed);
+        }
+        addLog(`✅ Картинок: ${done}/${list.length}${failed.length?` (ошибок: ${failed.length})`:''}`, done>0?'ok':'warn');
         return result;
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ downloadAllBookImages (15.09.2026)
+    // ============================================================
 
     // ═══ ОБЛОЖКА + РЕЦЕНЗИИ ═══
     async function fetchCoverBlob(artId){
@@ -1079,7 +1257,7 @@ h2{font-size:22px;margin:40px 0 18px;color:#1a2a4a;border-left:4px solid #4a8af4
 <div class="annotation">${cleanAnn || '<i>Аннотация отсутствует</i>'}</div>
 <h2>💬 Рецензии (${reviews.length})</h2>
 ${revHtml}
-<div class="footer">📚 LitRes Downloader v70.0<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
+<div class="footer">📚 LitRes Downloader v72.0<br>Скачано: ${new Date().toLocaleString('ru-RU')}</div>
 </body></html>`;
     }
 
@@ -1177,7 +1355,7 @@ ${revHtml}
     }
 
     // ============================================================
-    // buildPdfFromHtml — НАТИВНЫЙ ТЕКСТОВЫЙ PDF (v70)
+    // buildPdfFromHtml — НАТИВНЫЙ ТЕКСТОВЫЙ PDF (v72)
     // ============================================================
     async function buildPdfFromHtml(htmlContent, title='Книга'){
         if(!JSPDFLoaded){
@@ -1380,38 +1558,86 @@ ${revHtml}
     }
 
     // ============================================================
-    // loadImageForPdf — картинка → dataURL (с кэшем)
+    // ФУНКЦИЯ: loadImageForPdf (ИСПРАВЛЕННАЯ)
+    // ДАТА: 15.09.2026
+    // ОПИСАНИЕ: Грузит картинку (blob:/data:/http) → canvas → dataURL JPEG.
+    //   v72: crossOrigin только для http(s); проверка naturalWidth>0;
+    //   детальные логи каждого шага; кэш включая неудачные (null).
     // ============================================================
     const _imgCache = new Map();
     async function loadImageForPdf(src){
         if(_imgCache.has(src)) return _imgCache.get(src);
+
         return new Promise(resolve => {
             const img = new Image();
-            img.crossOrigin = 'anonymous';
-            const t = setTimeout(() => { _imgCache.set(src, null); resolve(null); }, 15000);
+
+            // crossOrigin нужен только для http(s) — blob:/data: не требуют
+            if(/^https?:/i.test(src)){
+                img.crossOrigin = 'anonymous';
+            }
+
+            const t = setTimeout(() => {
+                console.warn(`⏱️ loadImageForPdf timeout: ${src.substring(0, 80)}`);
+                _imgCache.set(src, null);
+                resolve(null);
+            }, 15000);
+
             img.onload = () => {
                 clearTimeout(t);
                 try{
+                    const w = img.naturalWidth;
+                    const h = img.naturalHeight;
+
+                    if(!w || !h){
+                        console.warn(`⚠️ loadImageForPdf: 0×0 → ${src.substring(0, 80)}`);
+                        _imgCache.set(src, null);
+                        resolve(null);
+                        return;
+                    }
+
                     const MAX_SIDE = 1600;
-                    let w = img.naturalWidth, h = img.naturalHeight;
                     const k = Math.min(MAX_SIDE / w, MAX_SIDE / h, 1);
                     const cw = Math.round(w * k), ch = Math.round(h * k);
+
                     const c = document.createElement('canvas');
                     c.width = cw; c.height = ch;
-                    c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, cw, ch);
+                    ctx.drawImage(img, 0, 0, cw, ch);
+
                     const dataUrl = c.toDataURL('image/jpeg', 0.85);
+                    if(!dataUrl || dataUrl.length < 100){
+                        console.warn(`⚠️ loadImageForPdf: пустой dataURL → ${src.substring(0, 80)}`);
+                        _imgCache.set(src, null);
+                        resolve(null);
+                        return;
+                    }
+
                     const result = { dataUrl, fmt:'JPEG', w: cw, h: ch };
+                    console.log(`🖼️ loadImageForPdf OK: ${w}×${h} → ${cw}×${ch}, ${Math.round(dataUrl.length/1024)} KB`);
                     _imgCache.set(src, result);
                     resolve(result);
                 }catch(e){
+                    console.warn(`❌ loadImageForPdf canvas error: ${e.message} → ${src.substring(0, 80)}`);
                     _imgCache.set(src, null);
                     resolve(null);
                 }
             };
-            img.onerror = () => { clearTimeout(t); _imgCache.set(src, null); resolve(null); };
+
+            img.onerror = (e) => {
+                clearTimeout(t);
+                console.warn(`❌ loadImageForPdf onerror: ${src.substring(0, 80)}`, e);
+                _imgCache.set(src, null);
+                resolve(null);
+            };
+
             img.src = src;
         });
     }
+    // ============================================================
+    // КОНЕЦ ФУНКЦИИ loadImageForPdf (15.09.2026)
+    // ============================================================
 
     // ============================================================
     // openReaderInNewTab
@@ -1524,7 +1750,7 @@ ${revHtml}
                 <div class="ldl-logo">📚</div>
                 <div style="flex:1;min-width:0;">
                     <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v70.0 · text pdf + retry + eta</div>
+                    <div class="ldl-subtitle">v72.0 · text pdf + cyrillic + img fix</div>
                 </div>
                 <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
                 <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
@@ -1882,7 +2108,7 @@ ${revHtml}
             isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
         });
         if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v70.0`);
+        state.zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nСтраниц: ${state.downloaded}/${state.total}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: JPG/GIF постранично\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`);
         try{
             const zb = await state.zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
@@ -1951,7 +2177,6 @@ ${revHtml}
         animateHand('hover');
         setStatus(`📖 ${state.downloaded}/${state.jsonChapters.length ? state.downloaded : '?'}`);
 
-        // ETA по главам
         if(state.downloaded > 0 && state.startTime){
             const elapsed = (Date.now() - state.startTime) / 1000;
             const avg = elapsed / state.downloaded;
@@ -2036,7 +2261,9 @@ ${revHtml}
         console.log(`📊 Анализ книги: ${chapterCount} глав, ${Math.round(totalTextLen/1000)}K симв., ${totalImgCount} 🖼️, ${avgTextPerImage} симв/картинку`);
         console.log(`📊 PDF toggle=${userWantsPdf}, isImageOnly=${isImageOnlyBook}, jsPDF=${JSPDFLoaded}`);
 
+        // ============================================================
         // РЕЖИМ 1: image-only → PDF из картинок
+        // ============================================================
         if(userWantsPdf && isImageOnlyBook && JSPDFLoaded){
             logStep(`📕 Image-only книга → PDF (${totalImgCount} стр.)`);
             try{
@@ -2055,35 +2282,73 @@ ${revHtml}
             }catch(e){ logWarn(`⚠️ PDF не собрался: ${e.message} → fallback ZIP`); }
         }
 
+        // ============================================================
         // РЕЖИМ 2: текстовая книга → HTML → PDF (ТЕКСТ!)
+        // ИСПРАВЛЕНО: 15.09.2026
+        // - ждём загрузки ВСЕХ картинок перед подменой src
+        // - проверяем что blob URL действительно готовы
+        // - логируем сколько картинок подменено
+        // - ревок blob URL в finally
+        // ============================================================
         if(userWantsPdf && !isImageOnlyBook && totalTextLen > 3000 && JSPDFLoaded){
             logStep(`📄 Текстовая книга (${Math.round(totalTextLen/1000)}K симв) → текстовый PDF`);
+
             const objUrls = [];
             try{
-                const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor });
-                let htmlWithImages = html;
+                let htmlWithImages = buildBookHtml(
+                    state.jsonChapters,
+                    { title: state.bookTitle, author: state.bookAuthor }
+                );
+                console.log(`📄 HTML собран: ${Math.round(htmlWithImages.length/1024)} KB, картинок в map: ${imagesMap.size}`);
+
+                let replacedCount = 0;
                 for(const [name, blob] of imagesMap){
+                    if(!blob || blob.size < 100){
+                        console.warn(`⚠️ Картинка ${name} пустая (${blob?.size||0} байт) — пропускаем`);
+                        continue;
+                    }
+
                     const objUrl = URL.createObjectURL(blob);
                     objUrls.push(objUrl);
-                    htmlWithImages = htmlWithImages.split(`src="${name}"`).join(`src="${objUrl}"`);
+
+                    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const re1 = new RegExp(`src="${escapedName}"`, 'g');
+                    const re2 = new RegExp(`src='${escapedName}'`, 'g');
+                    const beforeLen = htmlWithImages.length;
+                    htmlWithImages = htmlWithImages.replace(re1, `src="${objUrl}"`);
+                    htmlWithImages = htmlWithImages.replace(re2, `src="${objUrl}"`);
+                    if(htmlWithImages.length !== beforeLen) replacedCount++;
                 }
+                console.log(`🔗 Подменено src: ${replacedCount} из ${imagesMap.size} (blob URLs: ${objUrls.length})`);
+
                 const pdfBlob = await buildPdfFromHtml(htmlWithImages, state.bookTitle);
                 const fn = `${safe}.pdf`;
                 triggerDownload(pdfBlob, fn);
                 zipInfo.textContent = `✅ ${fn} (${(pdfBlob.size/1048576).toFixed(2)} MB)`;
                 zipInfo.style.color = '#4a8af4';
-                showResult(`📄 PDF (${Math.round(totalTextLen/1000)}K симв текста)`, fn, pdfBlob.size);
+                showResult(
+                    `📄 PDF (${Math.round(totalTextLen/1000)}K симв текста, ${replacedCount} 🖼️)`,
+                    fn,
+                    pdfBlob.size
+                );
                 await saveProgress(true);
                 clearJsonCheckpoint();
                 state.isRunning = false; updateButtons();
                 return;
-            }catch(e){ logWarn(`⚠️ HTML→PDF не собрался: ${e.message} → fallback ZIP`); }
-            finally{
-                for(const u of objUrls){ try{ URL.revokeObjectURL(u); }catch(e){} }
+            }catch(e){
+                logWarn(`⚠️ HTML→PDF не собрался: ${e.message} → fallback ZIP`);
+                console.error('finalizeJsonBook PDF error:', e);
+            }finally{
+                for(const u of objUrls){
+                    try{ URL.revokeObjectURL(u); }catch(e){}
+                }
+                console.log(`♻️ Ревокнуто blob URL: ${objUrls.length}`);
             }
         }
 
+        // ============================================================
         // РЕЖИМ 3: ZIP с HTML + картинками
+        // ============================================================
         logStep(`📦 ZIP с HTML (${chapterCount} глав, ${totalImgCount} 🖼️)`);
         if(!state.zip) state.zip = new JSZip();
         const html = buildBookHtml(state.jsonChapters, { title: state.bookTitle, author: state.bookAuthor });
@@ -2107,7 +2372,7 @@ ${revHtml}
             `Глав: ${state.jsonChapters.length}\nПропущено: ${state.skippedChapters.length}\n` +
             `Картинок: ${imgCount}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
             `Формат: HTML (из JSON)\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
-            `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v70.0`
+            `Дата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`
         );
 
         try{
@@ -2136,7 +2401,7 @@ ${revHtml}
             isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
         });
         if(packed.cover) addLog(`✅ Обложка: cover.${packed.cover}`, 'db');
-        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: PDF\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v70.0`);
+        zip.file('book_info.txt', `Название: ${state.bookTitle}\nАвтор: ${state.bookAuthor}\nartId: ${state.artId}\nfileId: ${state.fileId}\nЦена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\nФормат: PDF\nОбложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\nДата: ${new Date().toLocaleString('ru-RU')}\nСкачано через LitRes Downloader v72.0`);
         try{
             const zb = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
             const zn = `${safe}.zip`;
@@ -2206,7 +2471,6 @@ ${revHtml}
 
             logStep('🎯 Этап 2: Выбор стратегии по приоритету...');
 
-            // 1️⃣ PDF
             if(diag.pdf.ok){
                 logStep('📕 PDF — прямой файл (приоритет 1)');
                 state.isRunning = true; updateButtons();
@@ -2221,7 +2485,6 @@ ${revHtml}
                 logWarn('PDF не скачался → следующая стратегия');
             }
 
-            // 2️⃣ ZIP toc
             if(diag.zipToc.ok){
                 logStep('📦 ZIP через toc.js (приоритет 2)');
                 state.isRunning = true; updateButtons();
@@ -2250,7 +2513,6 @@ ${revHtml}
                 logWarn('ZIP (toc.js) не скачался → следующая');
             }
 
-            // 3️⃣ ZIP direct
             if(diag.zipDirect.ok){
                 logStep('📦 ZIP напрямую (приоритет 3)');
                 state.isRunning = true; updateButtons();
@@ -2279,7 +2541,6 @@ ${revHtml}
                 logWarn('ZIP direct не скачался → следующая');
             }
 
-            // 4️⃣ Audio/Video
             if(diag.audio.ok){
                 logStep(`${diag.audio.format.icon} ${diag.audio.format.name} — мультимедиа (приоритет 4)`);
                 state.isRunning = true; updateButtons();
@@ -2296,7 +2557,6 @@ ${revHtml}
                 logWarn('Мультимедиа не скачалось → следующая');
             }
 
-            // 5️⃣ JSON
             if(diag.json.ok){
                 const jtype = diag.json.type;
                 logStep(`📖 JSON главы (тип: ${jtype}) — приоритет 5`);
@@ -2309,7 +2569,6 @@ ${revHtml}
                     state.startPage=0; state.endPage=999; state.zip = new JSZip();
                     state.startTime = Date.now();
 
-                    // Чекпоинт
                     const cp = loadJsonCheckpoint(state.artId);
                     if(cp && cp.downloaded > 0 && cp.downloaded < 2000){
                         if(confirm(`💾 Найден чекпоинт: глава ${cp.downloaded}.\nПродолжить с неё? (скачанные главы потеряются)`)){
@@ -2329,7 +2588,6 @@ ${revHtml}
                 logWarn(`JSON тип "${jtype}" не поддерживается`);
             }
 
-            // 6️⃣ PDFjs
             if(diag.pdfjs.ok){
                 logStep(`📕 JPG/GIF постранично — ${diag.pdfjs.pages} стр. (приоритет 6)`);
                 state.pageFormats = diag.pdfjs.pageFormats;
@@ -2410,7 +2668,7 @@ ${revHtml}
     }
 
     window.downloaderUI = {
-        version: 'v70.0',
+        version: 'v72.0',
         start: startSmart, stop: stopDownload, state, Sound, addLog, SAVINGS, formatPrice,
         diagnoseStrategies,
         checkStrategy_Pdf, checkStrategy_ZipToc, checkStrategy_ZipDirect,
@@ -2472,7 +2730,7 @@ ${revHtml}
         animateHand('🖐️');
         updateButtons();
         updateTabTitle();
-        console.log('%c✅ LitRes Downloader v70.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
+        console.log('%c✅ LitRes Downloader v72.0 готов!', 'color:#4ade80;font-weight:bold;font-size:14px;');
         console.log(`%c💰 Сэкономлено: ${formatPrice(SAVINGS.total)} (${SAVINGS.books} книг)`, 'color:#2ecc71;font-weight:bold;');
     }
 
