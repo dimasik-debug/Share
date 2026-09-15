@@ -1309,179 +1309,178 @@ ${revHtml}
     }
 
     // ═══ UI ═══
-    document.body.insertAdjacentHTML('beforeend', `
-        <style>
-            @keyframes ldl-mini-in{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-            @keyframes ldl-in{from{opacity:0;transform:translateY(20px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
-            @keyframes ldl-pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
-            @keyframes ldl-money-glow{0%,100%{box-shadow:0 0 0 rgba(46,204,113,0);}50%{box-shadow:0 0 20px rgba(46,204,113,.5);}}
-            #litres_mini{animation:ldl-mini-in .3s cubic-bezier(.16,1,.3,1);position:fixed;bottom:16px;right:16px;z-index:99999;background:#000;border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.7);display:none;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;transition:all .2s;font-family:'Segoe UI',Arial,sans-serif;}
-            #litres_mini:hover{box-shadow:0 16px 48px rgba(74,138,244,.4);transform:translateY(-1px);}
-            #litres_downloader_ui{animation:ldl-in .35s cubic-bezier(.16,1,.3,1);position:fixed;bottom:16px;right:16px;z-index:99999;background:#0e0e10;color:#fff;font-family:'Segoe UI',Arial,sans-serif;width:440px;max-width:calc(100vw - 32px);border-radius:20px;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 80px rgba(0,0,0,.8);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 32px);user-select:none;font-size:13px;}
-            #litres_downloader_ui *{box-sizing:border-box;}
-            #litres_downloader_ui ::-webkit-scrollbar{width:6px;}
-            #litres_downloader_ui ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px;}
-            .ldl-header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;cursor:move;}
-            .ldl-logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 16px rgba(74,138,244,.35);flex-shrink:0;}
-            .ldl-title{font-weight:700;font-size:15px;line-height:1.15;}
-            .ldl-title .accent{color:#4a8af4;}
-            .ldl-subtitle{font-size:10px;color:rgba(255,255,255,.4);text-transform:uppercase;margin-top:2px;}
-            .ldl-icon-btn{width:30px;height:30px;padding:0;border-radius:9px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:none;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
-            .ldl-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff;}
-            .ldl-icon-btn.yadisk-btn:hover{background:rgba(252,63,29,.15);color:#fc3f1d;}
-            .ldl-icon-btn.pos-btn:hover{background:rgba(240,165,0,.15);color:#f0a500;}
-            .ldl-body{padding:12px 16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;}
-            .ldl-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px 12px;font-size:11px;line-height:1.5;}
-            .ldl-card.book-card{background:linear-gradient(135deg,rgba(74,138,244,.08),rgba(74,138,244,.03));border-left:3px solid #4a8af4;}
-            .ldl-card.savings-card{background:linear-gradient(135deg,rgba(46,204,113,.12),rgba(46,204,113,.04));border-left:3px solid #2ecc71;}
-            .ldl-card.savings-card.pulse{animation:ldl-money-glow 1.2s ease;}
-            .ldl-card-title{font-weight:700;font-size:12px;margin-bottom:4px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-            .ldl-card-row{color:rgba(255,255,255,.6);font-size:11px;margin-top:2px;}
-            .ldl-card-label{font-size:10px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px;}
-            .ldl-savings-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-            .ldl-savings-amount{font-size:18px;font-weight:800;color:#2ecc71;font-family:'SF Mono',Consolas,monospace;line-height:1.1;}
-            .ldl-savings-meta{font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;}
-            .ldl-savings-reset{background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);border:none;border-radius:8px;padding:4px 8px;font-size:10px;cursor:pointer;transition:all .2s;flex-shrink:0;}
-            .ldl-savings-reset:hover{background:rgba(231,76,60,.15);color:#e74c3c;}
-            .ldl-progress-box{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px;}
-            .ldl-status-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-            .ldl-hand{font-size:22px;width:32px;text-align:center;transition:transform .8s cubic-bezier(.34,1.56,.64,1);flex-shrink:0;}
-            .ldl-hand.downloading{animation:ldl-pulse 1.5s infinite;}
-            .ldl-status-text{flex:1;min-width:0;}
-            .ldl-status-main{font-weight:600;font-size:12px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-            .ldl-status-phase{font-size:10px;color:rgba(255,255,255,.4);font-family:'SF Mono',Consolas,monospace;margin-top:1px;}
-            .ldl-counter{font-size:15px;font-weight:700;color:#4a8af4;font-family:'SF Mono',Consolas,monospace;flex-shrink:0;}
-            .ldl-bar{width:100%;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;margin-bottom:8px;}
-            .ldl-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#1a5a9a,#4a8af4);border-radius:3px;transition:width .3s ease;}
-            .ldl-progress-info{display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;margin-bottom:8px;}
-            .ldl-progress-info .pct{font-weight:700;color:#4a8af4;}
-            .ldl-log{font-size:10px;color:rgba(255,255,255,.55);background:rgba(0,0,0,.4);padding:8px 10px;border-radius:8px;max-height:70px;overflow-y:auto;font-family:'SF Mono',Consolas,monospace;line-height:1.5;border:1px solid rgba(255,255,255,.05);word-break:break-word;}
-            .ldl-result{display:none;padding:12px 14px;background:linear-gradient(135deg,rgba(39,174,96,.15),rgba(46,204,113,.08));border:1.5px solid rgba(39,174,96,.4);border-radius:12px;font-size:11px;line-height:1.6;position:relative;}
-            .ldl-result-title{font-weight:800;font-size:13px;color:#2ecc71;margin-bottom:6px;padding-right:20px;}
-            .ldl-result-close{position:absolute;top:8px;right:8px;background:transparent;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px;}
-            .ldl-result-close:hover{background:rgba(255,255,255,.1);color:#fff;}
-            .ldl-result-line{color:rgba(255,255,255,.8);}
-            .ldl-result-line b{color:#fff;}
-            .ldl-result-line .fmt{color:#4a8af4;}
-            .ldl-result-line .money{color:#2ecc71;font-weight:700;}
-            .ldl-buttons{display:flex;gap:6px;padding:0 16px 12px;flex-shrink:0;}
-            .ldl-btn{padding:14px;border-radius:10px;border:none;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;}
-            .ldl-btn-main{flex:3;background:linear-gradient(135deg,#27ae60,#2ecc71);color:#fff;box-shadow:0 4px 16px rgba(46,204,113,.35);}
-            .ldl-btn-main:hover:not(:disabled){box-shadow:0 6px 20px rgba(46,204,113,.5);transform:translateY(-1px);}
-            .ldl-btn-main.pause-mode{background:linear-gradient(135deg,#f0a500,#f39c12);box-shadow:0 4px 16px rgba(240,165,0,.35);}
-            .ldl-btn-main.continue-mode,.ldl-btn-main.repeat-mode{background:linear-gradient(135deg,#1a5a9a,#4a8af4);box-shadow:0 4px 16px rgba(74,138,244,.4);}
-            .ldl-btn-main:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;}
-            .ldl-btn-stop{flex:1;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.08);}
-            .ldl-btn-stop:hover:not(:disabled){background:rgba(231,76,60,.15);color:#e74c3c;}
-            .ldl-btn-stop:disabled{opacity:.3;cursor:not-allowed;}
-            .ldl-toggles{display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;margin:0 16px 10px;font-size:11px;flex-wrap:wrap;flex-shrink:0;}
-            .ldl-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:rgba(255,255,255,.75);user-select:none;}
-            .ldl-toggle:hover{color:#fff;}
-            .ldl-toggle input{width:14px;height:14px;cursor:pointer;margin:0;accent-color:#4a8af4;}
-            .ldl-toggle.force input{accent-color:#e74c3c;}
-            .ldl-toggle.auto input{accent-color:#27ae60;}
-            .ldl-toggle.print input{accent-color:#f0a500;}
-            .ldl-toggle.yadisk input{accent-color:#fc3f1d;}
-            .ldl-toggle.local input{accent-color:#2ecc71;}
-            .ldl-force-status{margin-left:auto;font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px;font-family:'SF Mono',Consolas,monospace;}
-            .ldl-force-status.on{color:#e74c3c;background:rgba(231,76,60,.15);}
-            .ldl-force-status.print-on{color:#f0a500;background:rgba(240,165,0,.15);}
-            .ldl-force-status.cloud-on{color:#fc3f1d;background:rgba(252,63,29,.15);}
-            .ldl-force-status.local-on{color:#2ecc71;background:rgba(46,204,113,.15);}
-            .ldl-footer{padding:0 16px 14px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:rgba(255,255,255,.4);flex-shrink:0;gap:8px;}
-            #status_text{flex:1;text-align:center;font-family:'SF Mono',Consolas,monospace;}
-            #zip_info{color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;display:none;}
-        </style>
+       document.body.insertAdjacentHTML('beforeend', `
+<style>
+@keyframes ldl-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes ldl-pulse{50%{opacity:.55}}
+@keyframes ldl-glow{50%{box-shadow:0 0 14px rgba(46,204,113,.55)}}
+#litres_mini{animation:ldl-in .25s;position:fixed;bottom:10px;right:10px;z-index:99999;background:#000;border:1px solid rgba(255,255,255,.08);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.7);display:none;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-family:Segoe UI,Arial,sans-serif;transition:box-shadow .2s}
+#litres_mini:hover{box-shadow:0 10px 28px rgba(74,138,244,.4)}
+#litres_downloader_ui{animation:ldl-in .3s;position:fixed;bottom:10px;right:10px;z-index:99999;background:#0e0e10;color:#fff;font-family:Segoe UI,Arial,sans-serif;width:380px;max-width:calc(100vw - 20px);border-radius:14px;border:1px solid rgba(255,255,255,.08);box-shadow:0 16px 48px rgba(0,0,0,.8);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 20px);user-select:none;font-size:12px;line-height:1.35}
+#litres_downloader_ui *{box-sizing:border-box}
+#litres_downloader_ui ::-webkit-scrollbar{width:5px;height:5px}
+#litres_downloader_ui ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+.ldl-header{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;cursor:move}
+.ldl-logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 3px 10px rgba(74,138,244,.35);flex-shrink:0}
+.ldl-title{font-weight:700;font-size:13px;line-height:1.1}
+.ldl-title .accent{color:#4a8af4}
+.ldl-subtitle{font-size:9px;color:rgba(255,255,255,.4);text-transform:uppercase;margin-top:1px;letter-spacing:.3px}
+.ldl-icon-btn{width:24px;height:24px;padding:0;border-radius:7px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:none;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.ldl-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+.ldl-icon-btn.yadisk-btn:hover{background:rgba(252,63,29,.15);color:#fc3f1d}
+.ldl-icon-btn.pos-btn:hover{background:rgba(240,165,0,.15);color:#f0a500}
+.ldl-body{padding:8px 10px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px}
+.ldl-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:6px 8px;font-size:10px;line-height:1.4}
+.ldl-card.book-card{background:linear-gradient(135deg,rgba(74,138,244,.08),rgba(74,138,244,.03));border-left:2px solid #4a8af4}
+.ldl-card.savings-card{background:linear-gradient(135deg,rgba(46,204,113,.12),rgba(46,204,113,.04));border-left:2px solid #2ecc71}
+.ldl-card.savings-card.pulse{animation:ldl-glow 1.1s ease}
+.ldl-card-title{font-weight:700;font-size:11px;margin-bottom:2px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ldl-card-row{color:rgba(255,255,255,.6);font-size:10px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ldl-card-label{font-size:9px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.3px;font-weight:700;margin-bottom:3px}
+.ldl-savings-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.ldl-savings-amount{font-size:15px;font-weight:800;color:#2ecc71;font-family:'SF Mono',Consolas,monospace;line-height:1.05}
+.ldl-savings-meta{font-size:9px;color:rgba(255,255,255,.5);margin-top:1px}
+.ldl-savings-reset{background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);border:none;border-radius:6px;padding:3px 6px;font-size:9px;cursor:pointer;transition:all .15s;flex-shrink:0}
+.ldl-savings-reset:hover{background:rgba(231,76,60,.15);color:#e74c3c}
+.ldl-progress-box{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:8px}
+.ldl-status-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.ldl-hand{font-size:18px;width:24px;text-align:center;transition:transform .6s cubic-bezier(.34,1.56,.64,1);flex-shrink:0}
+.ldl-hand.downloading{animation:ldl-pulse 1.4s infinite}
+.ldl-status-text{flex:1;min-width:0}
+.ldl-status-main{font-weight:600;font-size:11px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ldl-status-phase{font-size:9px;color:rgba(255,255,255,.4);font-family:'SF Mono',Consolas,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ldl-counter{font-size:12px;font-weight:700;color:#4a8af4;font-family:'SF Mono',Consolas,monospace;flex-shrink:0}
+.ldl-bar{width:100%;height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-bottom:5px}
+.ldl-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#1a5a9a,#4a8af4);border-radius:2px;transition:width .3s ease}
+.ldl-progress-info{display:flex;justify-content:space-between;font-size:9px;color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;margin-bottom:6px}
+.ldl-progress-info .pct{font-weight:700;color:#4a8af4}
+.ldl-log{font-size:9px;color:rgba(255,255,255,.55);background:rgba(0,0,0,.4);padding:5px 7px;border-radius:6px;max-height:44px;overflow-y:auto;font-family:'SF Mono',Consolas,monospace;line-height:1.4;border:1px solid rgba(255,255,255,.05);word-break:break-word}
+.ldl-result{display:none;padding:8px 10px;background:linear-gradient(135deg,rgba(39,174,96,.15),rgba(46,204,113,.08));border:1px solid rgba(39,174,96,.4);border-radius:8px;font-size:10px;line-height:1.5;position:relative}
+.ldl-result-title{font-weight:800;font-size:11px;color:#2ecc71;margin-bottom:4px;padding-right:18px}
+.ldl-result-close{position:absolute;top:5px;right:5px;background:transparent;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:12px;padding:2px 5px;border-radius:5px}
+.ldl-result-close:hover{background:rgba(255,255,255,.1);color:#fff}
+.ldl-result-line{color:rgba(255,255,255,.8);overflow-wrap:break-word}
+.ldl-result-line b{color:#fff}
+.ldl-result-line .fmt{color:#4a8af4}
+.ldl-result-line .money{color:#2ecc71;font-weight:700}
+.ldl-buttons{display:flex;gap:5px;padding:0 10px 8px;flex-shrink:0}
+.ldl-btn{padding:9px;border-radius:7px;border:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}
+.ldl-btn-main{flex:3;background:linear-gradient(135deg,#27ae60,#2ecc71);color:#fff;box-shadow:0 3px 10px rgba(46,204,113,.3)}
+.ldl-btn-main:hover:not(:disabled){box-shadow:0 5px 14px rgba(46,204,113,.5);transform:translateY(-1px)}
+.ldl-btn-main.pause-mode{background:linear-gradient(135deg,#f0a500,#f39c12);box-shadow:0 3px 10px rgba(240,165,0,.3)}
+.ldl-btn-main.continue-mode,.ldl-btn-main.repeat-mode{background:linear-gradient(135deg,#1a5a9a,#4a8af4);box-shadow:0 3px 10px rgba(74,138,244,.4)}
+.ldl-btn-main:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.ldl-btn-stop{flex:1;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.08);font-size:11px}
+.ldl-btn-stop:hover:not(:disabled){background:rgba(231,76,60,.15);color:#e74c3c}
+.ldl-btn-stop:disabled{opacity:.3;cursor:not-allowed}
+.ldl-toggles{display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:7px;margin:0 10px 6px;font-size:10px;flex-wrap:wrap;flex-shrink:0}
+.ldl-toggle{display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:600;color:rgba(255,255,255,.75);user-select:none}
+.ldl-toggle:hover{color:#fff}
+.ldl-toggle input{width:12px;height:12px;cursor:pointer;margin:0;accent-color:#4a8af4}
+.ldl-toggle.force input{accent-color:#e74c3c}
+.ldl-toggle.auto input{accent-color:#27ae60}
+.ldl-toggle.print input{accent-color:#f0a500}
+.ldl-toggle.yadisk input{accent-color:#fc3f1d}
+.ldl-toggle.local input{accent-color:#2ecc71}
+.ldl-force-status{margin-left:auto;font-size:9px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);padding:2px 6px;border-radius:6px;font-family:'SF Mono',Consolas,monospace}
+.ldl-force-status.on{color:#e74c3c;background:rgba(231,76,60,.15)}
+.ldl-force-status.print-on{color:#f0a500;background:rgba(240,165,0,.15)}
+.ldl-force-status.cloud-on{color:#fc3f1d;background:rgba(252,63,29,.15)}
+.ldl-force-status.local-on{color:#2ecc71;background:rgba(46,204,113,.15)}
+.ldl-footer{padding:0 10px 8px;display:flex;justify-content:space-between;align-items:center;font-size:9px;color:rgba(255,255,255,.4);flex-shrink:0;gap:6px}
+#status_text{flex:1;text-align:center;font-family:'SF Mono',Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#zip_info{color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;display:none}
+</style>
 
-        <div id="litres_mini" title="Развернуть">
-            <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 4px 12px rgba(74,138,244,.4);flex-shrink:0;">📚</div>
-            <div style="display:flex;flex-direction:column;line-height:1.25;min-width:0;">
-                <div style="font-size:11px;color:#fff;font-weight:700;">LitRes DL</div>
-                <div id="litres_mini_status" style="font-size:9px;color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">готов</div>
-            </div>
-            <div id="litres_mini_badge" style="display:none;background:#4a8af4;color:#fff;font-size:9px;font-weight:bold;padding:2px 7px;border-radius:8px;font-family:'SF Mono',Consolas,monospace;">0%</div>
-            <div style="font-size:13px;color:rgba(255,255,255,.4);">▲</div>
+<div id="litres_mini" title="Развернуть">
+  <div style="width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#1a5a9a,#4a8af4);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">📚</div>
+  <div style="display:flex;flex-direction:column;line-height:1.2;min-width:0">
+    <div style="font-size:10px;color:#fff;font-weight:700">LitRes DL</div>
+    <div id="litres_mini_status" style="font-size:9px;color:rgba(255,255,255,.5);font-family:'SF Mono',Consolas,monospace;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">готов</div>
+  </div>
+  <div id="litres_mini_badge" style="display:none;background:#4a8af4;color:#fff;font-size:9px;font-weight:bold;padding:1px 6px;border-radius:6px;font-family:'SF Mono',Consolas,monospace">0%</div>
+  <div style="font-size:11px;color:rgba(255,255,255,.4)">▲</div>
+</div>
+
+<div id="litres_downloader_ui">
+  <div class="ldl-header" id="ldl_drag_handle">
+    <div class="ldl-logo">📚</div>
+    <div style="flex:1;min-width:0">
+      <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
+      <div class="ldl-subtitle">v82.0 · yandex.disk + local</div>
+    </div>
+    <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
+    <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
+    <button id="btn_yadisk" class="ldl-icon-btn yadisk-btn" title="Яндекс.Диск">☁️</button>
+    <button id="btn_recenter" class="ldl-icon-btn pos-btn" title="Сбросить позицию окна">📍</button>
+    <button id="btn_reader" class="ldl-icon-btn" title="Открыть ридер">📖</button>
+    <button id="btn_minimize" class="ldl-icon-btn" title="Свернуть">—</button>
+    <button id="close_ui" class="ldl-icon-btn" title="Закрыть">✕</button>
+  </div>
+
+  <div class="ldl-body">
+    <div class="ldl-card book-card">
+      <div class="ldl-card-title" id="preview_book_title">⏳ Инициализация...</div>
+      <div class="ldl-card-row">✍️ <span id="preview_book_author">—</span></div>
+      <div class="ldl-card-row">📄 <span id="preview_total_pages">—</span> • <span id="preview_formats">⏳</span> • <span id="preview_price">—</span></div>
+    </div>
+
+    <div class="ldl-card savings-card" id="savings_block">
+      <div class="ldl-card-label">💰 Сэкономлено</div>
+      <div class="ldl-savings-row">
+        <div>
+          <div class="ldl-savings-amount" id="savings_amount">0,00 ₽</div>
+          <div class="ldl-savings-meta" id="savings_meta">0 книг</div>
         </div>
+        <button class="ldl-savings-reset" id="btn_savings_reset" title="Сбросить счётчик">Сброс</button>
+      </div>
+    </div>
 
-        <div id="litres_downloader_ui">
-            <div class="ldl-header" id="ldl_drag_handle">
-                <div class="ldl-logo">📚</div>
-                <div style="flex:1;min-width:0;">
-                    <div class="ldl-title">LitRes <span class="accent">Downloader</span></div>
-                    <div class="ldl-subtitle">v82.0 · yandex.disk + local</div>
-                </div>
-                <button id="btn_sound" class="ldl-icon-btn" title="Звук">🔊</button>
-                <button id="btn_github" class="ldl-icon-btn" title="GitHub">🔑</button>
-                <button id="btn_yadisk" class="ldl-icon-btn yadisk-btn" title="Яндекс.Диск">☁️</button>
-                <button id="btn_recenter" class="ldl-icon-btn pos-btn" title="Сбросить позицию окна">📍</button>
-                <button id="btn_reader" class="ldl-icon-btn" title="Открыть ридер">📖</button>
-                <button id="btn_minimize" class="ldl-icon-btn" title="Свернуть">—</button>
-                <button id="close_ui" class="ldl-icon-btn" title="Закрыть">✕</button>
-            </div>
+    <div class="ldl-card" id="user_info_block">
+      <div class="ldl-card-label">👤 Аккаунт</div>
+      <div id="user_info_text">⏳ Загрузка...</div>
+    </div>
 
-            <div class="ldl-body">
-                <div class="ldl-card book-card">
-                    <div class="ldl-card-title" id="preview_book_title">⏳ Инициализация...</div>
-                    <div class="ldl-card-row">✍️ <span id="preview_book_author">—</span></div>
-                    <div class="ldl-card-row">📄 <span id="preview_total_pages">—</span> стр. • <span id="preview_formats">⏳</span> • <span id="preview_price">—</span></div>
-                </div>
-
-                <div class="ldl-card savings-card" id="savings_block">
-                    <div class="ldl-card-label">💰 Сэкономлено</div>
-                    <div class="ldl-savings-row">
-                        <div>
-                            <div class="ldl-savings-amount" id="savings_amount">0,00 ₽</div>
-                            <div class="ldl-savings-meta" id="savings_meta">0 книг</div>
-                        </div>
-                        <button class="ldl-savings-reset" id="btn_savings_reset" title="Сбросить счётчик">Сброс</button>
-                    </div>
-                </div>
-
-                <div class="ldl-card" id="user_info_block">
-                    <div class="ldl-card-label">👤 Аккаунт</div>
-                    <div id="user_info_text">⏳ Загрузка...</div>
-                </div>
-
-                <div class="ldl-progress-box">
-                    <div class="ldl-status-row">
-                        <div class="ldl-hand" id="hand_animation">🖐️</div>
-                        <div class="ldl-status-text">
-                            <div class="ldl-status-main" id="reading_status">⏳ Инициализация...</div>
-                            <div class="ldl-status-phase" id="reading_progress_text">Скрипт загружается</div>
-                        </div>
-                        <div class="ldl-counter" id="page_counter">0/0</div>
-                    </div>
-                    <div class="ldl-bar"><div class="ldl-bar-fill" id="progress_bar"></div></div>
-                    <div class="ldl-progress-info"><span id="progress_text">📥 0 из 0</span><span class="pct" id="percent_text">0%</span></div>
-                    <div class="ldl-log" id="log_status">⏳ Загрузка...</div>
-                </div>
-
-                <div class="ldl-result" id="result_banner">
-                    <button class="ldl-result-close" id="result_close" title="Закрыть">✕</button>
-                    <div class="ldl-result-title">✅ Готово!</div>
-                    <div id="result_text"></div>
-                </div>
-            </div>
-
-            <div class="ldl-buttons">
-                <button id="btn_start" class="ldl-btn ldl-btn-main" disabled>⏳ Инициализация...</button>
-                <button id="btn_stop" class="ldl-btn ldl-btn-stop" disabled>⏹ Стоп</button>
-            </div>
-
-            <div class="ldl-toggles">
-                <label class="ldl-toggle force"><input type="checkbox" id="force_mode">⚡ FORCE</label>
-                <label class="ldl-toggle auto" title="Автоматически нажать Старт"><input type="checkbox" id="autostart_mode">🚀 АВТО</label>
-                <label class="ldl-toggle print" title="PDF через печать браузера"><input type="checkbox" id="print_mode">🖨️ PDF</label>
-                <label class="ldl-toggle yadisk" title="Грузить книги на Яндекс.Диск"><input type="checkbox" id="yadisk_mode">☁️ Диск</label>
-                <label class="ldl-toggle local" title="Сохранять также в «Загрузки» (можно вместе с Диском)"><input type="checkbox" id="local_mode">💾 Локально</label>
-                <div class="ldl-force-status" id="force_status">⏸ выкл</div>
-            </div>
-
-            <div class="ldl-footer">
-                <span id="status_text">⏳ Загрузка...</span>
-                <span id="zip_info">📦 ...</span>
-            </div>
+    <div class="ldl-progress-box">
+      <div class="ldl-status-row">
+        <div class="ldl-hand" id="hand_animation">🖐️</div>
+        <div class="ldl-status-text">
+          <div class="ldl-status-main" id="reading_status">⏳ Инициализация...</div>
+          <div class="ldl-status-phase" id="reading_progress_text">Скрипт загружается</div>
         </div>
+        <div class="ldl-counter" id="page_counter">0/0</div>
+      </div>
+      <div class="ldl-bar"><div class="ldl-bar-fill" id="progress_bar"></div></div>
+      <div class="ldl-progress-info"><span id="progress_text">📥 0 из 0</span><span class="pct" id="percent_text">0%</span></div>
+      <div class="ldl-log" id="log_status">⏳ Загрузка...</div>
+    </div>
+
+    <div class="ldl-result" id="result_banner">
+      <button class="ldl-result-close" id="result_close" title="Закрыть">✕</button>
+      <div class="ldl-result-title">✅ Готово!</div>
+      <div id="result_text"></div>
+    </div>
+  </div>
+
+  <div class="ldl-buttons">
+    <button id="btn_start" class="ldl-btn ldl-btn-main" disabled>⏳ Инициализация...</button>
+    <button id="btn_stop" class="ldl-btn ldl-btn-stop" disabled>⏹ Стоп</button>
+  </div>
+
+  <div class="ldl-toggles">
+    <label class="ldl-toggle force" title="FORCE — быстрый режим"><input type="checkbox" id="force_mode">⚡</label>
+    <label class="ldl-toggle auto" title="Автостарт"><input type="checkbox" id="autostart_mode">🚀</label>
+    <label class="ldl-toggle print" title="PDF через печать"><input type="checkbox" id="print_mode">🖨️</label>
+    <label class="ldl-toggle yadisk" title="Грузить на Яндекс.Диск"><input type="checkbox" id="yadisk_mode">☁️</label>
+    <label class="ldl-toggle local" title="Сохранять также в «Загрузки»"><input type="checkbox" id="local_mode">💾</label>
+    <div class="ldl-force-status" id="force_status">⏸ выкл</div>
+  </div>
+
+  <div class="ldl-footer">
+    <span id="status_text">⏳ Загрузка...</span>
+    <span id="zip_info">📦 ...</span>
+  </div>
+</div>
     `);
 
     const $ = id => document.getElementById(id);
