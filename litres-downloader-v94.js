@@ -187,16 +187,6 @@
             return true;
         },
 
-                // ============================================================
-        // МЕТОД: YaDisk.uploadFile (ОБНОВЛЕННЫЙ v93)
-        // ДАТА: 16.09.2026
-        // ОПИСАНИЕ: Загрузка файла на Яндекс.Диск с прогрессом.
-        //           ГЛАВНОЕ ОТЛИЧИЕ ОТ СТАРОЙ ВЕРСИИ:
-        //           вместо общего xhr.timeout=600000 (10 минут) — stall-детекция.
-        //           Падаем только если 180 секунд НЕТ ПРОГРЕССА.
-        //           Пока байты льются — загрузка может идти хоть час.
-        //           Это критично для больших аудиокниг (500+ MB) на медленном канале.
-        // ============================================================
         async uploadFile(filename, blob, onProgress){
             if(!this.token) throw new Error('нет токена');
             if(!await this.ensureFullPath()) throw new Error('не удалось создать папки');
@@ -210,32 +200,13 @@
             const { href } = await urlResp.json();
             const totalSize = blob.size;
             addLog(`☁️ Загружаем ${fmtBytes(totalSize)} → ${fullPath}`, 'net');
-            console.log(`☁️ uploadFile START: ${filename} (${fmtBytes(totalSize)}) → ${fullPath}`);
             const startTime = performance.now();
             let lastLogPct = 0, lastUiUpdate = 0, lastLoaded = 0;
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open('PUT', href, true);
-                xhr.timeout = 0; // ⚡ Без общего таймаута — считаем по stall-детекции
-
-                // --- Stall-детекция: 180 сек без прогресса → abort ---
-                const STALL_MS = 180000;
-                let stallTimer = null;
-                let stallCount = 0;
-                const armStall = () => {
-                    if(stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(() => {
-                        stallCount++;
-                        console.warn(`☁️ stall ${STALL_MS/1000}s без прогресса (раз ${stallCount}), abort`);
-                        addLog(`☁️ Нет прогресса ${STALL_MS/1000}s → прерываем`, 'warn');
-                        try{ xhr.abort(); }catch(e){}
-                    }, STALL_MS);
-                };
-                const disarmStall = () => { if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; } };
-                armStall(); // Заводим сразу после открытия
-
+                xhr.timeout = 600000;
                 xhr.upload.onprogress = (e) => {
-                    armStall(); // ⚡ Прогресс есть → сбрасываем stall-таймер
                     const total = (e.lengthComputable && e.total > 0) ? e.total : totalSize;
                     const loaded = e.loaded || lastLoaded;
                     if(total <= 0) return;
@@ -249,9 +220,7 @@
                     if(pct - lastLogPct >= 10 || pct >= 100){ lastLogPct = Math.floor(pct/10)*10; addLog(`☁️ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(speed)}${eta>0?` · ETA ${fmtEta(eta)}`:''}`, 'cloud'); }
                 };
                 xhr.onload = async () => {
-                    disarmStall();
                     if(xhr.status >= 200 && xhr.status < 300){
-                        console.log(`☁️ uploadFile OK: ${filename} (${fmtBytes(totalSize)})`);
                         let publicUrl = null;
                         if(this.publish){
                             try{ const pr = await this.request(`/resources/publish?path=${path}`, { method:'PUT' }); if(pr.ok){ const mr = await this.request(`/resources?path=${path}&fields=public_url`); if(mr.ok){ const m = await mr.json(); publicUrl = m.public_url; } } }catch(e){}
@@ -259,15 +228,11 @@
                         resolve({ ok:true, path: fullPath, folder: targetFolder, publicUrl });
                     } else reject(new Error(`PUT failed: HTTP ${xhr.status}`));
                 };
-                xhr.onerror = () => { disarmStall(); console.error('☁️ uploadFile network error'); reject(new Error('XHR network error')); };
-                xhr.ontimeout = () => { disarmStall(); console.error('☁️ uploadFile timeout'); reject(new Error('XHR timeout')); };
-                xhr.onabort = () => { disarmStall(); console.error('☁️ uploadFile aborted (stall)'); reject(new Error(`stall > ${STALL_MS/1000}s без прогресса`)); };
+                xhr.onerror = () => reject(new Error('XHR network error'));
+                xhr.ontimeout = () => reject(new Error('XHR timeout'));
                 xhr.send(blob);
             });
         },
-        // ============================================================
-        // КОНЕЦ МЕТОДА YaDisk.uploadFile (16.09.2026)
-        // ============================================================
 
         async listFolder(folderPath){
             try{ const path = encodeURIComponent(folderPath); const r = await this.request(`/resources?path=${path}&limit=100&sort=-created`); if(!r.ok) return []; const d = await r.json(); return d._embedded?.items || []; }
@@ -1042,24 +1007,11 @@ ${revHtml}
                 zipInfo.style.color = '#2ecc71';
                 let extra = result.publicUrl ? `<div class="ldl-result-line">🔗 <a href="${result.publicUrl}" target="_blank" style="color:#4a8af4;">${result.publicUrl}</a></div>` : '';
                 $('result_text').innerHTML += `<div class="ldl-result-line" style="color:#2ecc71;font-weight:700;margin-top:6px;">☁️ Загружено на Яндекс.Диск</div><div class="ldl-result-line">📁 ${result.path}</div>${extra}`;
-            // ============================================================
-            // ЗАМЕНА: фоллбэк на локальное сохранение при падении Яндекс.Диска
-            // ДАТА: 16.09.2026
-            // ============================================================
             }catch(e){
                 addLog(`❌ Яндекс.Диск: ${e.message}`, 'err');
                 try{ Sound.error(); }catch(e2){}
-                // Если Диск упал, а локально выключено — сохраняем в «Загрузки», чтобы не потерять файл
-                if(!localOn){
-                    logWarn(`⚠️ Фоллбэк: сохраняем локально в «Загрузки»`);
-                    try{ Sound.local(); }catch(e3){}
-                    saveToBrowser(blob, filename);
-                    results.local = true;
-                }
             }
-            // ============================================================
-            // КОНЕЦ ЗАМЕНЫ (16.09.2026)
-            // ============================================================
+        }
 
         const needLocal = localOn || !yadiskOn;
         if(needLocal){
