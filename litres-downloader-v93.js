@@ -1843,12 +1843,11 @@ ${revHtml}
     }
 
 // ============================================================
-// ФУНКЦИЯ: saveMultimedia (ОБНОВЛЕННАЯ v90 — с диагностикой)
+// ФУНКЦИЯ: saveMultimedia (ОБНОВЛЕННАЯ v92)
 // ДАТА: 16.09.2026
 // ОПИСАНИЕ: Сохранение аудио/видео/PDF с полным набором метаданных.
 //           Всё упаковывается в ZIP: медиа (STORE), cover, about.html,
-//           book_info.txt. Каждый шаг логируется в консоль с эмодзи,
-//           чтобы сразу видеть, где что-то отвалилось.
+//           book_info.txt. Каждый шаг логируется в консоль.
 //           Fallback: если ZIP упал — качаем медиа напрямую.
 // ============================================================
 async function saveMultimedia(blob, formatInfo){
@@ -1927,7 +1926,7 @@ async function saveMultimedia(blob, formatInfo){
             `Обложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
             `Рецензий: ${packed.about ? 'да (about.html)' : 'нет'}\n` +
             `Дата: ${new Date().toLocaleString('ru-RU')}\n` +
-            `Скачано через LitRes Downloader v90.0`
+            `Скачано через LitRes Downloader v92.0`
         );
         console.log('➕ book_info.txt добавлен');
         addLog('➕ book_info.txt', 'db');
@@ -1984,8 +1983,147 @@ async function saveMultimedia(blob, formatInfo){
 // КОНЕЦ ФУНКЦИИ saveMultimedia (16.09.2026)
 // ============================================================
 
- // ============================================================
-// ФУНКЦИЯ: packMetaIntoZip (ОБНОВЛЕННАЯ v90 — с диагностикой)
+// ============================================================
+// ФУНКЦИЯ: repackAudioZipWithMeta (НОВАЯ v92)
+// ДАТА: 16.09.2026
+// ОПИСАНИЕ: Берёт готовый ZIP (например от 000.js), внутри которого уже
+//           лежат аудиофайлы, распаковывает его, добавляет метаданные
+//           (cover.jpg, about.html, book_info.txt) и упаковывает обратно.
+//           Аудиофайлы кладутся с compression:'STORE' (не пережимаем).
+//           Вызывается из startSmart() когда аудиокнига приходит в виде ZIP.
+// ============================================================
+async function repackAudioZipWithMeta(sourceBlob, audioTag){
+    const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
+    const zipName = `${safe}${audioTag.tag || '_audio'}.zip`;
+
+    console.log('%c═══════════════════════════════════════', 'color:#e67e22;font-weight:bold');
+    console.log('%c📦 repackAudioZipWithMeta START', 'color:#e67e22;font-weight:bold;font-size:14px');
+    console.log('%c═══════════════════════════════════════', 'color:#e67e22;font-weight:bold');
+    console.log('📥 sourceBlob.size:', sourceBlob.size, `(${(sourceBlob.size/1048576).toFixed(2)} MB)`);
+    console.log('🎧 audioTag:', audioTag);
+    console.log('📦 zipName:', zipName);
+    console.log('🆔 artId:', state.artId, '| fileId:', state.fileId);
+
+    setStatus(`📦 Распаковка + метаданные...`);
+    try{ Sound.zip(); }catch(e){}
+    zipInfo.style.display = 'inline';
+    zipInfo.textContent = `📦 Распаковка...`;
+    zipInfo.style.color = '#f0a500';
+    addLog(`📦 Распаковка ZIP + cover + about.html + book_info.txt`, 'step');
+
+    try{
+        // Ждём JSZip
+        if(!JSZipLoaded){
+            addLog('⏳ Ждём JSZip...', 'step');
+            await new Promise(res => {
+                const c = setInterval(()=>{ if(JSZipLoaded){ clearInterval(c); res(); } }, 200);
+                setTimeout(()=>{ clearInterval(c); res(); }, 5000);
+            });
+        }
+        if(typeof JSZip === 'undefined') throw new Error('JSZip не загружен');
+
+        // --- Распаковываем исходный ZIP ---
+        console.log('📂 Распаковываем исходный ZIP...');
+        const sourceZip = await JSZip.loadAsync(sourceBlob);
+        const sourceFiles = Object.keys(sourceZip.files).filter(p => !sourceZip.files[p].dir);
+        console.log('📋 Файлов в исходном ZIP:', sourceFiles.length, sourceFiles.slice(0, 20));
+
+        // --- Новый ZIP ---
+        const newZip = new JSZip();
+        let mediaCount = 0, otherCount = 0;
+
+        for(const path of sourceFiles){
+            const entry = sourceZip.files[path];
+            const content = await entry.async('blob');
+            const isMedia = /\.(mp3|m4b|m4a|flac|ogg|wav|mp4|webm|mkv)$/i.test(path);
+            if(isMedia){
+                newZip.file(path, content, { compression: 'STORE' });
+                mediaCount++;
+            } else {
+                newZip.file(path, content);
+                otherCount++;
+            }
+        }
+        console.log(`➕ Скопировано: ${mediaCount} медиа (STORE), ${otherCount} прочих`);
+        addLog(`➕ Файлов из исходного ZIP: ${mediaCount} медиа + ${otherCount} прочих`, 'db');
+
+        // --- Метаданные (cover + about.html) ---
+        console.log('🖼️ Вызываем packMetaIntoZip...');
+        addLog('🖼️ Тянем обложку + рецензии...', 'net');
+        const packed = await packMetaIntoZip(newZip, state.artId, {
+            title: state.bookTitle, author: state.bookAuthor,
+            annotation: bookInfo.annotation, genres: bookInfo.genres,
+            publisher: bookInfo.publisher, publicationDate: bookInfo.publicationDate,
+            isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
+        });
+        console.log('📦 packMetaIntoZip вернул:', packed);
+
+        // --- book_info.txt ---
+        newZip.file('book_info.txt',
+            `Название: ${state.bookTitle}\n` +
+            `Автор: ${state.bookAuthor}\n` +
+            `Жанры: ${bookInfo.genres?.join(', ') || '—'}\n` +
+            `artId: ${state.artId}\n` +
+            `fileId: ${state.fileId}\n` +
+            `Формат: ZIP (аудио)\n` +
+            `Аудиофайлов: ${audioTag.count} .${audioTag.ext || '?'}\n` +
+            `Всего файлов: ${audioTag.total || '?'}\n` +
+            `Цена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
+            `Обложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
+            `Рецензий: ${packed.about ? 'да (about.html)' : 'нет'}\n` +
+            `Дата: ${new Date().toLocaleString('ru-RU')}\n` +
+            `Скачано через LitRes Downloader v92.0`
+        );
+        console.log('➕ book_info.txt добавлен');
+
+        const finalEntries = Object.keys(newZip.files);
+        console.log('📋 ФИНАЛЬНЫЙ список файлов в ZIP:', finalEntries);
+        console.log('📊 Всего файлов в ZIP:', finalEntries.length);
+
+        // --- Генерируем финальный ZIP ---
+        console.log('🗜️ generateAsync (DEFLATE level 1)...');
+        addLog(`🗜️ Генерируем ZIP...`, 'step');
+        const zb = await newZip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 1 }
+        });
+        console.log(`✅ ZIP готов: ${zb.size} байт (${(zb.size/1048576).toFixed(2)} MB)`);
+
+        // --- Отправка ---
+        await triggerDownload(zb, zipName);
+
+        // --- UI ---
+        zipInfo.textContent = `✅ ${zipName} (${(zb.size/1048576).toFixed(2)} MB)`;
+        zipInfo.style.color = '#4a8af4';
+
+        const extras = [];
+        if(packed.cover) extras.push('cover.'+packed.cover);
+        if(packed.about) extras.push('about.html');
+        extras.push('book_info.txt');
+
+        logAudio(`🎧 ${zipName} (${(zb.size/1048576).toFixed(2)} MB) · внутри: ${extras.join(', ')} + ${mediaCount} медиа`);
+        showResult(`🎧 ZIP (аудио + метаданные)`, zipName, zb.size);
+        console.log('%c✅ repackAudioZipWithMeta DONE', 'color:#e67e22;font-weight:bold;font-size:14px');
+    }
+    catch(e){
+        // Fallback — отправляем исходный ZIP как есть
+        console.error('❌❌❌ repackAudioZipWithMeta упал:', e);
+        console.error('Stack:', e.stack);
+        logWarn(`⚠️ Переупаковка не удалась (${e.message}) → отправляем исходный ZIP`);
+        try{ Sound.warn(); }catch(e2){}
+        await triggerDownload(sourceBlob, zipName);
+        zipInfo.textContent = `✅ ${zipName} (${(sourceBlob.size/1048576).toFixed(2)} MB)`;
+        zipInfo.style.color = '#4a8af4';
+        showResult(`🎧 ZIP (аудио, без метаданных)`, zipName, sourceBlob.size);
+    }
+}
+// ============================================================
+// КОНЕЦ ФУНКЦИИ repackAudioZipWithMeta (16.09.2026)
+// ============================================================
+
+// ============================================================
+// ФУНКЦИЯ: packMetaIntoZip (ОБНОВЛЕННАЯ v92 — с диагностикой)
 // ДАТА: 16.09.2026
 // ОПИСАНИЕ: Скачивает обложку и рецензии, пакует их в ZIP.
 //           Раньше стоял пустой catch(e){} — ошибки глотались молча.
@@ -2038,284 +2176,380 @@ async function packMetaIntoZip(zip, artId, book){
 }
 // ============================================================
 // КОНЕЦ ФУНКЦИИ packMetaIntoZip (16.09.2026)
-// ============================================================ 
+// ============================================================
 
-    async function startSmart(){
-        if(!state.isReady) return;
-        if(state.phase==='done'||state.phase==='error') resetForRepeat();
-        state.printMode = false;
-        try{ state.printMode = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
-        console.log(`🖨️ PDF принт: ${state.printMode ? 'ВКЛ' : 'ВЫКЛ'}`);
-        console.log(`☁️ Яндекс.Диск: ${YaDisk.enabled ? 'ВКЛ → ' + YaDisk.getTargetFolder() + '/' : 'ВЫКЛ'}`);
-        console.log(`💾 Локально: ${isLocalEnabled() ? 'ВКЛ' : 'ВЫКЛ'}`);
-        console.log(`🏷️ Жанровые папки: ${YaDisk.useGenreFolders ? 'ВКЛ' : 'ВЫКЛ'}`);
-        if(state.isRunning && state.isPaused){
-            state.isPaused=false; updateButtons(); Sound.click();
-            setStatus('▶ Продолжаем...');
-            if(state.mode==='json') jsonDownloadLoop(); else downloadLoop();
-            return;
+// ============================================================
+// ФУНКЦИЯ: startSmart (ОБНОВЛЕННАЯ v92)
+// ДАТА: 16.09.2026
+// ОПИСАНИЕ: Главный оркестратор. Диагностирует стратегии и выбирает
+//           путь скачивания. Все ветки, где приходит ZIP с аудио,
+//           прогоняют его через repackAudioZipWithMeta() — чтобы
+//           добавить cover.jpg, about.html, book_info.txt.
+// ============================================================
+async function startSmart(){
+    if(!state.isReady) return;
+    if(state.phase==='done'||state.phase==='error') resetForRepeat();
+    state.printMode = false;
+    try{ state.printMode = localStorage.getItem(PRINT_MODE_KEY) === 'true'; }catch(e){}
+    console.log(`🖨️ PDF принт: ${state.printMode ? 'ВКЛ' : 'ВЫКЛ'}`);
+    console.log(`☁️ Яндекс.Диск: ${YaDisk.enabled ? 'ВКЛ → ' + YaDisk.getTargetFolder() + '/' : 'ВЫКЛ'}`);
+    console.log(`💾 Локально: ${isLocalEnabled() ? 'ВКЛ' : 'ВЫКЛ'}`);
+    console.log(`🏷️ Жанровые папки: ${YaDisk.useGenreFolders ? 'ВКЛ' : 'ВЫКЛ'}`);
+    if(state.isRunning && state.isPaused){
+        state.isPaused=false; updateButtons(); Sound.click();
+        setStatus('▶ Продолжаем...');
+        if(state.mode==='json') jsonDownloadLoop(); else downloadLoop();
+        return;
+    }
+    if(state.isRunning && !state.isPaused){
+        state.isPaused=true;
+        if(state.autoInterval){ clearTimeout(state.autoInterval); state.autoInterval=null; }
+        updateButtons(); Sound.click();
+        setStatus('⏸ Пауза'); setReadingStatus('⏸ Пауза');
+        saveProgress();
+        return;
+    }
+    if(state.isStarting) return;
+    state.isStarting = true;
+    updateButtons();
+    setPhase('starting');
+    try{
+        Sound.start();
+        if(!JSZipLoaded){ setStatus('⏳ JSZip...'); await new Promise(res => { const c=setInterval(()=>{ if(JSZipLoaded){ clearInterval(c); res(); } },200); setTimeout(()=>{ clearInterval(c); res(); }, 5000); }); }
+        updateSession();
+        if(!sessionData.sessionId){ setStatus('⚠️ Нет session-id. F5!', 'err'); Sound.error(); return; }
+        if(!state.fileId){ if(!state.bookInfoLoaded) await fetchBookInfo(); state.fileId = bookInfo.fileId; fileId = bookInfo.fileId; }
+        if(!state.fileId){ setStatus('❌ Нет fileId!', 'err'); Sound.error(); if(confirm('Открыть ридер?')) openReaderInNewTab(); return; }
+
+        logStep('🔬 Этап 1: Диагностика...');
+        const diag = await diagnoseStrategies();
+        state.diagnostics = diag;
+        if(!diag){ setStatus('❌ Диагностика провалилась', 'err'); Sound.error(); return; }
+        logStep('🎯 Этап 2: Выбор стратегии...');
+        const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
+
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 1: PDF прямой
+        // ═══════════════════════════════════════════════════════════
+        if(diag.pdf.ok){
+            logStep('📕 PDF — прямой (приоритет 1)');
+            state.isRunning = true; updateButtons();
+            bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
+            const fnameMatch = diag.pdf.link.match(/fname=([^&]+)/);
+            const pdfFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : `${safe}.pdf`;
+            let blob = null;
+            try{ blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']); }
+            catch(e){}
+            if(blob && blob.size > 1024){
+                logOk(`✅ PDF: ${fmtBytes(blob.size)}`);
+                await finalizePdfToZip(blob);
+                state.isRunning = false; updateButtons(); return;
+            }
+            logWarn('⚠️ fetch не сработал → <a download>');
+            const a = document.createElement('a');
+            a.href = diag.pdf.link;
+            a.download = pdfFname;
+            a.target = '_self';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 2000);
+            showResult(`📕 PDF (навигация)`, pdfFname, 0);
+            state.isRunning = false; updateButtons(); return;
         }
-        if(state.isRunning && !state.isPaused){
-            state.isPaused=true;
-            if(state.autoInterval){ clearTimeout(state.autoInterval); state.autoInterval=null; }
-            updateButtons(); Sound.click();
-            setStatus('⏸ Пауза'); setReadingStatus('⏸ Пауза');
-            saveProgress();
-            return;
-        }
-        if(state.isStarting) return;
-        state.isStarting = true;
-        updateButtons();
-        setPhase('starting');
-        try{
-            Sound.start();
-            if(!JSZipLoaded){ setStatus('⏳ JSZip...'); await new Promise(res => { const c=setInterval(()=>{ if(JSZipLoaded){ clearInterval(c); res(); } },200); setTimeout(()=>{ clearInterval(c); res(); }, 5000); }); }
-            updateSession();
-            if(!sessionData.sessionId){ setStatus('⚠️ Нет session-id. F5!', 'err'); Sound.error(); return; }
-            if(!state.fileId){ if(!state.bookInfoLoaded) await fetchBookInfo(); state.fileId = bookInfo.fileId; fileId = bookInfo.fileId; }
-            if(!state.fileId){ setStatus('❌ Нет fileId!', 'err'); Sound.error(); if(confirm('Открыть ридер?')) openReaderInNewTab(); return; }
 
-            logStep('🔬 Этап 1: Диагностика...');
-            const diag = await diagnoseStrategies();
-            state.diagnostics = diag;
-            if(!diag){ setStatus('❌ Диагностика провалилась', 'err'); Sound.error(); return; }
-            logStep('🎯 Этап 2: Выбор стратегии...');
-            const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
-
-            if(diag.pdf.ok){
-                logStep('📕 PDF — прямой (приоритет 1)');
-                state.isRunning = true; updateButtons();
-                bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
-                const fnameMatch = diag.pdf.link.match(/fname=([^&]+)/);
-                const pdfFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : `${safe}.pdf`;
-                let blob = null;
-                try{ blob = await downloadWithProgress(diag.pdf.link, { credentials:'omit', mode:'cors' }, 'PDF', ['pdf']); }
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 2: ZIP через toc.js
+        // ═══════════════════════════════════════════════════════════
+        if(diag.zipToc.ok){
+            logStep('📦 ZIP через toc.js (приоритет 2)');
+            state.isRunning = true; updateButtons();
+            bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
+            let blob = null;
+            if(!/content\.litres\.ru/i.test(diag.zipToc.link)){
+                try{ blob = await downloadWithProgress(diag.zipToc.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
                 catch(e){}
-                if(blob && blob.size > 1024){
-                    logOk(`✅ PDF: ${fmtBytes(blob.size)}`);
-                    await finalizePdfToZip(blob);
+            } else logWarn('⚠️ content.litres.ru — через 000.js');
+            // ============================================================
+            // ЗАМЕНА №1: ZIP с аудио → переупаковываем с метаданными
+            // ДАТА: 16.09.2026
+            // ============================================================
+            if(blob && blob.size > 1024){
+                const at = await getZipAudioTag(blob);
+                if(at.count > 0){
+                    logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                    await repackAudioZipWithMeta(blob, at);
                     state.isRunning = false; updateButtons(); return;
                 }
-                logWarn('⚠️ fetch не сработал → <a download>');
-                const a = document.createElement('a');
-                a.href = diag.pdf.link;
-                a.download = pdfFname;
-                a.target = '_self';
-                a.style.display = 'none';
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => a.remove(), 2000);
-                showResult(`📕 PDF (навигация)`, pdfFname, 0);
+                const fn = `${safe}${at.tag}.zip`;
+                await triggerDownload(blob, fn);
+                zipInfo.style.display='inline';
+                zipInfo.textContent = `✅ ${fn}`;
+                zipInfo.style.color = '#4a8af4';
+                showResult('📦 ZIP', fn, blob.size);
                 state.isRunning = false; updateButtons(); return;
             }
-
-            if(diag.zipToc.ok){
-                logStep('📦 ZIP через toc.js (приоритет 2)');
-                state.isRunning = true; updateButtons();
-                bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
-                let blob = null;
-                if(!/content\.litres\.ru/i.test(diag.zipToc.link)){
-                    try{ blob = await downloadWithProgress(diag.zipToc.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
-                    catch(e){}
-                } else logWarn('⚠️ content.litres.ru — через 000.js');
-                if(blob && blob.size > 1024){
-                    const at = await getZipAudioTag(blob);
-                    const fn = `${safe}${at.tag}.zip`;
-                    if(at.count > 0) logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext}`);
-                    await triggerDownload(blob, fn);
-                    zipInfo.style.display='inline';
-                    zipInfo.textContent = `✅ ${fn}`;
-                    zipInfo.style.color = '#4a8af4';
-                    showResult(at.count > 0 ? `🎧 ZIP (аудио)` : '📦 ZIP', fn, blob.size);
-                    state.isRunning = false; updateButtons(); return;
-                }
-                logStep('📥 Попытка 2: 000.js...');
-                const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
-                try{
-                    const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
-                    if(blob000 && blob000.size > 1024){
-                        const info000 = blob000._detected || await detectBlobType(blob000);
-                        logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-                        if(info000.type === 'zip'){
-                            const at = await getZipAudioTag(blob000);
-                            if(at.count > 0) logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext}`);
-                            else logOk(`📦 Файлов в ZIP: ${at.total}`);
-                            const fn = `${safe}${at.tag}.zip`;
-                            await triggerDownload(blob000, fn);
-                            showResult(at.count > 0 ? `🎧 ZIP (аудио)` : '📦 ZIP', fn, blob000.size);
+            // ============================================================
+            // КОНЕЦ ЗАМЕНЫ №1 (16.09.2026)
+            // ============================================================
+            logStep('📥 Попытка 2: 000.js...');
+            const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
+            try{
+                const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
+                if(blob000 && blob000.size > 1024){
+                    const info000 = blob000._detected || await detectBlobType(blob000);
+                    logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
+                    // ============================================================
+                    // ЗАМЕНА №2: ZIP с аудио → переупаковываем с метаданными
+                    // ДАТА: 16.09.2026
+                    // ============================================================
+                    if(info000.type === 'zip'){
+                        const at = await getZipAudioTag(blob000);
+                        if(at.count > 0){
+                            logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                            await repackAudioZipWithMeta(blob000, at);
                             state.isRunning = false; updateButtons(); return;
                         }
-                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
-                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
-                    }
-                }catch(e){}
-                logWarn('⚠️ fetch не сработал → <a download>');
-                const m = diag.zipToc.link.match(/fname=([^&]+)/);
-                const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
-                await downloadViaAnchor(diag.zipToc.link, fname, 'ZIP');
-                showResult('📦 ZIP (навигация)', fname, 0);
-                state.isRunning = false; updateButtons(); return;
-            }
-
-            if(diag.zipDirect.ok){
-                logStep('📦 ZIP напрямую (приоритет 3)');
-                state.isRunning = true; updateButtons();
-                bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
-                let blob = null;
-                if(!/content\.litres\.ru/i.test(diag.zipDirect.link)){
-                    try{ blob = await downloadWithProgress(diag.zipDirect.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
-                    catch(e){}
-                } else logWarn('⚠️ content.litres.ru — через 000.js');
-                if(blob && blob.size > 1024){
-                    const at = await getZipAudioTag(blob);
-                    const fn = `${safe}${at.tag}.zip`;
-                    if(at.count > 0) logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext}`);
-                    await triggerDownload(blob, fn);
-                    showResult(at.count > 0 ? `🎧 ZIP (аудио)` : '📦 ZIP', fn, blob.size);
-                    state.isRunning = false; updateButtons(); return;
-                }
-                const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
-                try{
-                    const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
-                    if(blob000 && blob000.size > 1024){
-                        const info000 = blob000._detected || await detectBlobType(blob000);
-                        logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-                        if(info000.type === 'zip'){
-                            const at = await getZipAudioTag(blob000);
-                            if(at.count > 0) logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext}`);
-                            const fn = `${safe}${at.tag}.zip`;
-                            await triggerDownload(blob000, fn);
-                            showResult(at.count > 0 ? `🎧 ZIP (аудио)` : '📦 ZIP', fn, blob000.size);
-                            state.isRunning = false; updateButtons(); return;
-                        }
-                        if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
-                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
-                    }
-                }catch(e){}
-                const m = diag.zipDirect.link.match(/fname=([^&]+)/);
-                const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
-                await downloadViaAnchor(diag.zipDirect.link, fname, 'ZIP');
-                showResult('📦 ZIP (навигация)', fname, 0);
-                state.isRunning = false; updateButtons(); return;
-            }
-
-            if(diag.audio.ok){
-                logStep(`${diag.audio.format.icon} ${diag.audio.format.name} — мультимедиа (приоритет 4)`);
-                state.isRunning = true; updateButtons();
-                bookInfo.format = diag.audio.format; bookInfo.isAudio = true; updateFormatDisplay();
-                const expected = ['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'];
-                let blob = null;
-                try{ blob = await downloadWithProgress(diag.audio.link, { credentials:'omit', mode:'cors' }, diag.audio.format.name, expected); }
-                catch(e){}
-                if(blob && blob.size > 1024){ const info = blob._detected || diag.audio.format; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
-                const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
-                try{
-                    const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, diag.audio.format.name, null);
-                    if(blob000 && blob000.size > 1024){
-                        const info000 = blob000._detected || await detectBlobType(blob000);
-                        logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
-                        if(expected.includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
-                        if(info000.type === 'zip'){
-                            const at = await getZipAudioTag(blob000);
-                            const fn = `${safe}${at.tag}.zip`;
-                            await triggerDownload(blob000, fn);
-                            showResult(at.count > 0 ? '🎧 ZIP (аудио)' : '📦 ZIP', fn, blob000.size);
-                            state.isRunning = false; updateButtons(); return;
-                        }
-                        if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
-                    }
-                }catch(e){}
-                const fnameMatch = diag.audio.link.match(/fname=([^&]+)/);
-                const ext = diag.audio.format.name.toLowerCase();
-                const audioFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : `${safe}_audio.${ext}`;
-                await downloadViaAnchor(diag.audio.link, audioFname, diag.audio.format.name);
-                showResult(`${diag.audio.format.icon} ${diag.audio.format.name} (навигация)`, audioFname, 0);
-                state.isRunning = false; updateButtons(); return;
-            }
-
-            if(diag.json.ok){
-                const jtype = diag.json.type;
-                const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
-                logStep(`📥 000.js (тип: ${jtype})...`);
-                if(jtype === 'pdf'){
-                    state.isRunning = true; updateButtons();
-                    bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
-                    const blob = await downloadWithProgress(chUrl, { credentials:'include' }, 'PDF', ['pdf']);
-                    if(blob && blob.size > 1024){ await finalizePdfToZip(blob); state.isRunning = false; updateButtons(); return; }
-                }
-                else if(jtype === 'zip'){
-                    state.isRunning = true; updateButtons();
-                    bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
-                    const blob = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip']);
-                    if(blob && blob.size > 1024){
-                        const at = await getZipAudioTag(blob);
-                        if(at.count > 0) logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext}`);
+                        logOk(`📦 Файлов в ZIP: ${at.total}`);
                         const fn = `${safe}${at.tag}.zip`;
-                        await triggerDownload(blob, fn);
-                        showResult(at.count > 0 ? `🎧 ZIP (аудио)` : '📦 ZIP', fn, blob.size);
+                        await triggerDownload(blob000, fn);
+                        showResult('📦 ZIP', fn, blob000.size);
                         state.isRunning = false; updateButtons(); return;
                     }
+                    // ============================================================
+                    // КОНЕЦ ЗАМЕНЫ №2 (16.09.2026)
+                    // ============================================================
+                    if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
+                    if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
                 }
-                else if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'].includes(jtype)){
-                    state.isRunning = true; updateButtons();
-                    const fmtMap = {
-                        'audio-mp3':{icon:'🎵',name:'MP3'}, 'audio-m4b':{icon:'🎧',name:'M4B'},
-                        'audio-m4a':{icon:'🎵',name:'M4A'}, 'audio-flac':{icon:'🎼',name:'FLAC'},
-                        'audio-ogg':{icon:'🎵',name:'OGG'}, 'audio-wav':{icon:'🎵',name:'WAV'},
-                        'video-mp4':{icon:'🎬',name:'MP4'}, 'video-webm':{icon:'🎬',name:'WEBM'}
-                    };
-                    const fmt = fmtMap[jtype];
-                    bookInfo.format = fmt; bookInfo.isAudio = true; updateFormatDisplay();
-                    const blob = await downloadWithProgress(chUrl, { credentials:'include' }, fmt.name);
-                    if(blob && blob.size > 1024){ const info = blob._detected || fmt; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
-                }
-                else if(jtype === 'json' || jtype === 'json-obj' || jtype === 'unknown'){
-                    logStep(`📖 JSON главы...`);
-                    bookInfo.format = { icon:'📖', name:'FB2' }; updateFormatDisplay();
-                    state.mode = 'json';
-                    state.jsonChapters=[]; state.jsonEmptyStreak=0; state.jsonNotFoundStreak=0; state.jsonErrorStreak=0; state.skippedChapters=[];
-                    state.downloaded=0; state.total=999;
-                    state.isRunning=true; state.isPaused=false; state.isStopped=false;
-                    state.startPage=0; state.endPage=999; state.zip = new JSZip();
-                    state.startTime = Date.now();
-                    const cp = loadJsonCheckpoint(state.artId);
-                    if(cp && cp.downloaded > 0 && cp.downloaded < 2000){
-                        if(confirm(`💾 Чекпоинт: глава ${cp.downloaded}. Продолжить?`)){ state.downloaded = cp.downloaded; logStep(`💾 Продолжаем с ${cp.downloaded}`); }
-                        else clearJsonCheckpoint();
-                    }
-                    updateProgress();
-                    setStatus('📖 Загрузка глав...');
-                    setReadingStatus('📖 Читаем главы...'); animateHand('hover');
-                    updateButtons();
-                    setTimeout(jsonDownloadLoop, 500); return;
-                }
-            }
-
-            if(diag.pdfjs.ok){
-                logStep(`📕 JPG/GIF постранично — ${diag.pdfjs.pages} стр.`);
-                state.pageFormats = diag.pdfjs.pageFormats;
-                state.totalPages = diag.pdfjs.pages; state.drmActivated = true;
-                bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
-                const tp = diag.pdfjs.pages;
-                state.startPage=1; state.endPage=tp; state.total=tp;
-                state.downloaded=0; state.errors=0; state.consecutiveErrors=0; state.failedPages=[];
-                state.isRunning=true; state.isPaused=false; state.isStopped=false;
-                state.mode='zip'; state.zip = new JSZip();
-                state.startTime = Date.now();
-                updateProgress();
-                setStatus(`🚀 1-${tp}`);
-                setReadingStatus('📖 Открываем книгу...'); animateHand('hover');
-                updateButtons();
-                setTimeout(downloadLoop, 1000); return;
-            }
-
-            setStatus('❌ Все стратегии провалились', 'err');
-            Sound.error();
-        } finally {
-            state.isStarting = false;
-            if(!state.isRunning) updateButtons();
+            }catch(e){}
+            logWarn('⚠️ fetch не сработал → <a download>');
+            const m = diag.zipToc.link.match(/fname=([^&]+)/);
+            const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
+            await downloadViaAnchor(diag.zipToc.link, fname, 'ZIP');
+            showResult('📦 ZIP (навигация)', fname, 0);
+            state.isRunning = false; updateButtons(); return;
         }
+
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 3: ZIP напрямую
+        // ═══════════════════════════════════════════════════════════
+        if(diag.zipDirect.ok){
+            logStep('📦 ZIP напрямую (приоритет 3)');
+            state.isRunning = true; updateButtons();
+            bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
+            let blob = null;
+            if(!/content\.litres\.ru/i.test(diag.zipDirect.link)){
+                try{ blob = await downloadWithProgress(diag.zipDirect.link, { credentials:'omit', mode:'cors' }, 'ZIP', ['zip']); }
+                catch(e){}
+            } else logWarn('⚠️ content.litres.ru — через 000.js');
+            // ============================================================
+            // ЗАМЕНА №3: ZIP с аудио → переупаковываем с метаданными
+            // ДАТА: 16.09.2026
+            // ============================================================
+            if(blob && blob.size > 1024){
+                const at = await getZipAudioTag(blob);
+                if(at.count > 0){
+                    logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                    await repackAudioZipWithMeta(blob, at);
+                    state.isRunning = false; updateButtons(); return;
+                }
+                const fn = `${safe}${at.tag}.zip`;
+                await triggerDownload(blob, fn);
+                showResult('📦 ZIP', fn, blob.size);
+                state.isRunning = false; updateButtons(); return;
+            }
+            // ============================================================
+            // КОНЕЦ ЗАМЕНЫ №3 (16.09.2026)
+            // ============================================================
+            const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
+            try{
+                const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip','audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav']);
+                if(blob000 && blob000.size > 1024){
+                    const info000 = blob000._detected || await detectBlobType(blob000);
+                    logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
+                    // ============================================================
+                    // ЗАМЕНА №4: ZIP с аудио → переупаковываем с метаданными
+                    // ДАТА: 16.09.2026
+                    // ============================================================
+                    if(info000.type === 'zip'){
+                        const at = await getZipAudioTag(blob000);
+                        if(at.count > 0){
+                            logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                            await repackAudioZipWithMeta(blob000, at);
+                            state.isRunning = false; updateButtons(); return;
+                        }
+                        const fn = `${safe}${at.tag}.zip`;
+                        await triggerDownload(blob000, fn);
+                        showResult('📦 ZIP', fn, blob000.size);
+                        state.isRunning = false; updateButtons(); return;
+                    }
+                    // ============================================================
+                    // КОНЕЦ ЗАМЕНЫ №4 (16.09.2026)
+                    // ============================================================
+                    if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav'].includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
+                    if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
+                }
+            }catch(e){}
+            const m = diag.zipDirect.link.match(/fname=([^&]+)/);
+            const fname = m ? decodeURIComponent(m[1]) : `${safe}.zip`;
+            await downloadViaAnchor(diag.zipDirect.link, fname, 'ZIP');
+            showResult('📦 ZIP (навигация)', fname, 0);
+            state.isRunning = false; updateButtons(); return;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 4: Аудио/Видео напрямую
+        // ═══════════════════════════════════════════════════════════
+        if(diag.audio.ok){
+            logStep(`${diag.audio.format.icon} ${diag.audio.format.name} — мультимедиа (приоритет 4)`);
+            state.isRunning = true; updateButtons();
+            bookInfo.format = diag.audio.format; bookInfo.isAudio = true; updateFormatDisplay();
+            const expected = ['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'];
+            let blob = null;
+            try{ blob = await downloadWithProgress(diag.audio.link, { credentials:'omit', mode:'cors' }, diag.audio.format.name, expected); }
+            catch(e){}
+            if(blob && blob.size > 1024){ const info = blob._detected || diag.audio.format; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
+            const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
+            try{
+                const blob000 = await downloadWithProgress(chUrl, { credentials:'include' }, diag.audio.format.name, null);
+                if(blob000 && blob000.size > 1024){
+                    const info000 = blob000._detected || await detectBlobType(blob000);
+                    logOk(`✅ 000.js → ${info000.name} (${fmtBytes(blob000.size)})`);
+                    if(expected.includes(info000.type)){ await saveMultimedia(blob000, info000); state.isRunning = false; updateButtons(); return; }
+                    // ============================================================
+                    // ЗАМЕНА №5: ZIP с аудио → переупаковываем с метаданными
+                    // ДАТА: 16.09.2026
+                    // ============================================================
+                    if(info000.type === 'zip'){
+                        const at = await getZipAudioTag(blob000);
+                        if(at.count > 0){
+                            logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                            await repackAudioZipWithMeta(blob000, at);
+                            state.isRunning = false; updateButtons(); return;
+                        }
+                        const fn = `${safe}${at.tag}.zip`;
+                        await triggerDownload(blob000, fn);
+                        showResult('📦 ZIP', fn, blob000.size);
+                        state.isRunning = false; updateButtons(); return;
+                    }
+                    // ============================================================
+                    // КОНЕЦ ЗАМЕНЫ №5 (16.09.2026)
+                    // ============================================================
+                    if(info000.type === 'pdf'){ await finalizePdfToZip(blob000); state.isRunning = false; updateButtons(); return; }
+                }
+            }catch(e){}
+            const fnameMatch = diag.audio.link.match(/fname=([^&]+)/);
+            const ext = diag.audio.format.name.toLowerCase();
+            const audioFname = fnameMatch ? decodeURIComponent(fnameMatch[1]) : `${safe}_audio.${ext}`;
+            await downloadViaAnchor(diag.audio.link, audioFname, diag.audio.format.name);
+            showResult(`${diag.audio.format.icon} ${diag.audio.format.name} (навигация)`, audioFname, 0);
+            state.isRunning = false; updateButtons(); return;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 5: 000.js (общий случай по типу содержимого)
+        // ═══════════════════════════════════════════════════════════
+        if(diag.json.ok){
+            const jtype = diag.json.type;
+            const chUrl = `https://www.litres.ru/download_book_subscr/${state.artId}/${state.fileId}/json/000.js`;
+            logStep(`📥 000.js (тип: ${jtype})...`);
+            if(jtype === 'pdf'){
+                state.isRunning = true; updateButtons();
+                bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
+                const blob = await downloadWithProgress(chUrl, { credentials:'include' }, 'PDF', ['pdf']);
+                if(blob && blob.size > 1024){ await finalizePdfToZip(blob); state.isRunning = false; updateButtons(); return; }
+            }
+            else if(jtype === 'zip'){
+                state.isRunning = true; updateButtons();
+                bookInfo.format = { icon:'📦', name:'ZIP' }; updateFormatDisplay();
+                // ============================================================
+                // ЗАМЕНА №6: ZIP с аудио → переупаковываем с метаданными
+                // ДАТА: 16.09.2026
+                // ============================================================
+                const blob = await downloadWithProgress(chUrl, { credentials:'include' }, 'ZIP', ['zip']);
+                if(blob && blob.size > 1024){
+                    const at = await getZipAudioTag(blob);
+                    if(at.count > 0){
+                        logAudio(`🎧 Аудиокнига: ${at.count} .${at.ext} — переупаковываем с метаданными`);
+                        await repackAudioZipWithMeta(blob, at);
+                        state.isRunning = false; updateButtons(); return;
+                    }
+                    const fn = `${safe}${at.tag}.zip`;
+                    await triggerDownload(blob, fn);
+                    showResult('📦 ZIP', fn, blob.size);
+                    state.isRunning = false; updateButtons(); return;
+                }
+                // ============================================================
+                // КОНЕЦ ЗАМЕНЫ №6 (16.09.2026)
+                // ============================================================
+            }
+            else if(['audio-mp3','audio-m4b','audio-m4a','audio-flac','audio-ogg','audio-wav','video-mp4','video-webm'].includes(jtype)){
+                state.isRunning = true; updateButtons();
+                const fmtMap = {
+                    'audio-mp3':{icon:'🎵',name:'MP3'}, 'audio-m4b':{icon:'🎧',name:'M4B'},
+                    'audio-m4a':{icon:'🎵',name:'M4A'}, 'audio-flac':{icon:'🎼',name:'FLAC'},
+                    'audio-ogg':{icon:'🎵',name:'OGG'}, 'audio-wav':{icon:'🎵',name:'WAV'},
+                    'video-mp4':{icon:'🎬',name:'MP4'}, 'video-webm':{icon:'🎬',name:'WEBM'}
+                };
+                const fmt = fmtMap[jtype];
+                bookInfo.format = fmt; bookInfo.isAudio = true; updateFormatDisplay();
+                const blob = await downloadWithProgress(chUrl, { credentials:'include' }, fmt.name);
+                if(blob && blob.size > 1024){ const info = blob._detected || fmt; await saveMultimedia(blob, info); state.isRunning = false; updateButtons(); return; }
+            }
+            else if(jtype === 'json' || jtype === 'json-obj' || jtype === 'unknown'){
+                logStep(`📖 JSON главы...`);
+                bookInfo.format = { icon:'📖', name:'FB2' }; updateFormatDisplay();
+                state.mode = 'json';
+                state.jsonChapters=[]; state.jsonEmptyStreak=0; state.jsonNotFoundStreak=0; state.jsonErrorStreak=0; state.skippedChapters=[];
+                state.downloaded=0; state.total=999;
+                state.isRunning=true; state.isPaused=false; state.isStopped=false;
+                state.startPage=0; state.endPage=999; state.zip = new JSZip();
+                state.startTime = Date.now();
+                const cp = loadJsonCheckpoint(state.artId);
+                if(cp && cp.downloaded > 0 && cp.downloaded < 2000){
+                    if(confirm(`💾 Чекпоинт: глава ${cp.downloaded}. Продолжить?`)){ state.downloaded = cp.downloaded; logStep(`💾 Продолжаем с ${cp.downloaded}`); }
+                    else clearJsonCheckpoint();
+                }
+                updateProgress();
+                setStatus('📖 Загрузка глав...');
+                setReadingStatus('📖 Читаем главы...'); animateHand('hover');
+                updateButtons();
+                setTimeout(jsonDownloadLoop, 500); return;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // ВЕТКА 6: PDFjs постранично (JPG/GIF)
+        // ═══════════════════════════════════════════════════════════
+        if(diag.pdfjs.ok){
+            logStep(`📕 JPG/GIF постранично — ${diag.pdfjs.pages} стр.`);
+            state.pageFormats = diag.pdfjs.pageFormats;
+            state.totalPages = diag.pdfjs.pages; state.drmActivated = true;
+            bookInfo.format = { icon:'📕', name:'PDF' }; updateFormatDisplay();
+            const tp = diag.pdfjs.pages;
+            state.startPage=1; state.endPage=tp; state.total=tp;
+            state.downloaded=0; state.errors=0; state.consecutiveErrors=0; state.failedPages=[];
+            state.isRunning=true; state.isPaused=false; state.isStopped=false;
+            state.mode='zip'; state.zip = new JSZip();
+            state.startTime = Date.now();
+            updateProgress();
+            setStatus(`🚀 1-${tp}`);
+            setReadingStatus('📖 Открываем книгу...'); animateHand('hover');
+            updateButtons();
+            setTimeout(downloadLoop, 1000); return;
+        }
+
+        setStatus('❌ Все стратегии провалились', 'err');
+        Sound.error();
+    } finally {
+        state.isStarting = false;
+        if(!state.isRunning) updateButtons();
     }
+}
+// ============================================================
+// КОНЕЦ ФУНКЦИИ startSmart (16.09.2026)
+// ============================================================
 
     function stopDownload(){
         if(!state.isReady) return;
