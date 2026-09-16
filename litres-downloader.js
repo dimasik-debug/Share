@@ -1,5 +1,5 @@
 /**
- * LitRes Downloader v89.0 — YANDEX.DISK + GENRE FOLDERS
+ * LitRes Downloader v95.0 — YANDEX.DISK + GENRE FOLDERS
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV (с прогрессом) + суффикс _audio
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
@@ -14,7 +14,7 @@
  */
 
 (function fullDownloaderV86() {
-    console.log('%c🚀 LitRes Downloader v92.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+    console.log('%c🚀 LitRes Downloader v95.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     console.log('%c☁️ Яндекс.Диск + 🏷️ Жанровые папки + 🎧 _audio+packMetaIntoZip', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
@@ -187,6 +187,16 @@
             return true;
         },
 
+                // ============================================================
+        // МЕТОД: YaDisk.uploadFile (ОБНОВЛЕННЫЙ v93)
+        // ДАТА: 16.09.2026
+        // ОПИСАНИЕ: Загрузка файла на Яндекс.Диск с прогрессом.
+        //           ГЛАВНОЕ ОТЛИЧИЕ ОТ СТАРОЙ ВЕРСИИ:
+        //           вместо общего xhr.timeout=600000 (10 минут) — stall-детекция.
+        //           Падаем только если 180 секунд НЕТ ПРОГРЕССА.
+        //           Пока байты льются — загрузка может идти хоть час.
+        //           Это критично для больших аудиокниг (500+ MB) на медленном канале.
+        // ============================================================
         async uploadFile(filename, blob, onProgress){
             if(!this.token) throw new Error('нет токена');
             if(!await this.ensureFullPath()) throw new Error('не удалось создать папки');
@@ -200,13 +210,32 @@
             const { href } = await urlResp.json();
             const totalSize = blob.size;
             addLog(`☁️ Загружаем ${fmtBytes(totalSize)} → ${fullPath}`, 'net');
+            console.log(`☁️ uploadFile START: ${filename} (${fmtBytes(totalSize)}) → ${fullPath}`);
             const startTime = performance.now();
             let lastLogPct = 0, lastUiUpdate = 0, lastLoaded = 0;
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open('PUT', href, true);
-                xhr.timeout = 600000;
+                xhr.timeout = 0; // ⚡ Без общего таймаута — считаем по stall-детекции
+
+                // --- Stall-детекция: 180 сек без прогресса → abort ---
+                const STALL_MS = 180000;
+                let stallTimer = null;
+                let stallCount = 0;
+                const armStall = () => {
+                    if(stallTimer) clearTimeout(stallTimer);
+                    stallTimer = setTimeout(() => {
+                        stallCount++;
+                        console.warn(`☁️ stall ${STALL_MS/1000}s без прогресса (раз ${stallCount}), abort`);
+                        addLog(`☁️ Нет прогресса ${STALL_MS/1000}s → прерываем`, 'warn');
+                        try{ xhr.abort(); }catch(e){}
+                    }, STALL_MS);
+                };
+                const disarmStall = () => { if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; } };
+                armStall(); // Заводим сразу после открытия
+
                 xhr.upload.onprogress = (e) => {
+                    armStall(); // ⚡ Прогресс есть → сбрасываем stall-таймер
                     const total = (e.lengthComputable && e.total > 0) ? e.total : totalSize;
                     const loaded = e.loaded || lastLoaded;
                     if(total <= 0) return;
@@ -220,7 +249,9 @@
                     if(pct - lastLogPct >= 10 || pct >= 100){ lastLogPct = Math.floor(pct/10)*10; addLog(`☁️ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(speed)}${eta>0?` · ETA ${fmtEta(eta)}`:''}`, 'cloud'); }
                 };
                 xhr.onload = async () => {
+                    disarmStall();
                     if(xhr.status >= 200 && xhr.status < 300){
+                        console.log(`☁️ uploadFile OK: ${filename} (${fmtBytes(totalSize)})`);
                         let publicUrl = null;
                         if(this.publish){
                             try{ const pr = await this.request(`/resources/publish?path=${path}`, { method:'PUT' }); if(pr.ok){ const mr = await this.request(`/resources?path=${path}&fields=public_url`); if(mr.ok){ const m = await mr.json(); publicUrl = m.public_url; } } }catch(e){}
@@ -228,11 +259,15 @@
                         resolve({ ok:true, path: fullPath, folder: targetFolder, publicUrl });
                     } else reject(new Error(`PUT failed: HTTP ${xhr.status}`));
                 };
-                xhr.onerror = () => reject(new Error('XHR network error'));
-                xhr.ontimeout = () => reject(new Error('XHR timeout'));
+                xhr.onerror = () => { disarmStall(); console.error('☁️ uploadFile network error'); reject(new Error('XHR network error')); };
+                xhr.ontimeout = () => { disarmStall(); console.error('☁️ uploadFile timeout'); reject(new Error('XHR timeout')); };
+                xhr.onabort = () => { disarmStall(); console.error('☁️ uploadFile aborted (stall)'); reject(new Error(`stall > ${STALL_MS/1000}s без прогресса`)); };
                 xhr.send(blob);
             });
         },
+        // ============================================================
+        // КОНЕЦ МЕТОДА YaDisk.uploadFile (16.09.2026)
+        // ============================================================
 
         async listFolder(folderPath){
             try{ const path = encodeURIComponent(folderPath); const r = await this.request(`/resources?path=${path}&limit=100&sort=-created`); if(!r.ok) return []; const d = await r.json(); return d._embedded?.items || []; }
