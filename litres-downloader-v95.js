@@ -1,5 +1,5 @@
 /**
- * LitRes Downloader v89.0 — YANDEX.DISK + GENRE FOLDERS
+ * LitRes Downloader v95.0 — YANDEX.DISK + GENRE FOLDERS
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV (с прогрессом) + суффикс _audio
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
@@ -14,7 +14,7 @@
  */
 
 (function fullDownloaderV86() {
-    console.log('%c🚀 LitRes Downloader v92.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+    console.log('%c🚀 LitRes Downloader v95.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     console.log('%c☁️ Яндекс.Диск + 🏷️ Жанровые папки + 🎧 _audio+packMetaIntoZip', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
