@@ -1,5 +1,5 @@
 /**
- * LitRes Downloader v86.0 — YANDEX.DISK + GENRE FOLDERS
+ * LitRes Downloader v89.0 — YANDEX.DISK + GENRE FOLDERS
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV (с прогрессом) + суффикс _audio
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
@@ -14,8 +14,8 @@
  */
 
 (function fullDownloaderV86() {
-    console.log('%c🚀 LitRes Downloader v86.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
-    console.log('%c☁️ Яндекс.Диск + 🏷️ Жанровые папки + 🎧 _audio', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
+    console.log('%c🚀 LitRes Downloader v89.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+    console.log('%c☁️ Яндекс.Диск + 🏷️ Жанровые папки + 🎧 _audio+saveMultimedia (ОБНОВЛЕННАЯ v88)', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
 
@@ -1852,21 +1852,127 @@ ${revHtml}
         }catch(e){ setStatus('❌ ' + e.message, 'err'); setPhase('error'); Sound.error(); }
     }
 
-    async function saveMultimedia(blob, formatInfo){
-        const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
-        const extMap = { 'MP3':'mp3','M4B':'m4b','M4A':'m4a','M4A/MP4':'m4a','FLAC':'flac','OGG':'ogg','WAV':'wav','MP4':'mp4','WEBM':'webm','MKV':'mkv','PDF':'pdf','ZIP':'zip' };
-        const ext = extMap[formatInfo.name] || 'bin';
-        const isAudio = ['MP3','M4B','M4A','M4A/MP4','FLAC','OGG','WAV'].includes(formatInfo.name);
-        const fn = isAudio ? `${safe}_audio.${ext}` : `${safe}.${ext}`;
-        await triggerDownload(blob, fn);
-        const sz = (blob.size/1048576).toFixed(2);
-        if(isAudio) logAudio(`🎧 Аудио → ${fn} (${sz} MB)`);
-        else addLog(`🎵 ${fn} (${sz} MB)`, 'ok');
-        zipInfo.style.display='inline';
-        zipInfo.textContent = `✅ ${fn} (${sz} MB)`;
+   // ============================================================
+// ФУНКЦИЯ: saveMultimedia (ОБНОВЛЕННАЯ v88)
+// ДАТА: 16.09.2026
+// ОПИСАНИЕ: Сохранение аудио/видео/PDF с полным набором метаданных.
+//           Теперь ВСЁ упаковывается в ZIP:
+//           - сам медиафайл (mp3/m4b/m4a/flac/ogg/wav/mp4/webm/mkv/pdf)
+//           - cover.jpg / cover.png (обложка книги)
+//           - about.html (аннотация + метаданные + рецензии)
+//           - book_info.txt (полная карточка книги)
+//           Медиа кладётся с compression:'STORE' (не сжимаем повторно),
+//           метаданные — DEFLATE level 1 (летает мгновенно).
+//           Fallback: если ZIP упал — качаем медиа напрямую без метаданных,
+//           чтобы юзер не остался без файла.
+// ============================================================
+async function saveMultimedia(blob, formatInfo){
+    // --- Подготовка имён и расширений ---
+    const safe = state.bookTitle.replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
+    const extMap = { 'MP3':'mp3','M4B':'m4b','M4A':'m4a','M4A/MP4':'m4a','FLAC':'flac','OGG':'ogg','WAV':'wav','MP4':'mp4','WEBM':'webm','MKV':'mkv','PDF':'pdf','ZIP':'zip' };
+    const ext = extMap[formatInfo.name] || 'bin';
+    const isAudio = ['MP3','M4B','M4A','M4A/MP4','FLAC','OGG','WAV'].includes(formatInfo.name);
+    const mediaName = isAudio ? `${safe}_audio.${ext}` : `${safe}.${ext}`;
+    const zipName  = `${safe}${isAudio ? '_audio' : ''}.zip`;
+
+    // --- Статус: начали упаковку ---
+    setStatus(`📦 Упаковка ${formatInfo.name} + метаданные...`);
+    try{ Sound.zip(); }catch(e){}
+    zipInfo.style.display = 'inline';
+    zipInfo.textContent = `📦 Упаковка...`;
+    zipInfo.style.color = '#f0a500';
+    addLog(`📦 Упаковка ${formatInfo.icon} ${formatInfo.name} + cover + about.html + book_info.txt`, 'step');
+
+    // --- Основной блок: собираем ZIP со всеми метаданными ---
+    try{
+        // Ждём JSZip, если он ещё не подгрузился
+        if(!JSZipLoaded){
+            addLog('⏳ Ждём JSZip...', 'step');
+            await new Promise(res => {
+                const c = setInterval(()=>{ if(JSZipLoaded){ clearInterval(c); res(); } }, 200);
+                setTimeout(()=>{ clearInterval(c); res(); }, 5000);
+            });
+        }
+        if(typeof JSZip === 'undefined') throw new Error('JSZip не загружен');
+
+        const zip = new JSZip();
+
+        // 🎧 Медиафайл — STORE (mp3/m4b/m4a уже сжаты, повторно не жмём)
+        zip.file(mediaName, blob, { compression: 'STORE' });
+        addLog(`➕ ${mediaName} (${(blob.size/1048576).toFixed(2)} MB) — STORE`, 'db');
+
+        // 🖼️ cover + 📄 about.html — общий помощник packMetaIntoZip
+        addLog('🖼️ Тянем обложку + рецензии...', 'net');
+        const packed = await packMetaIntoZip(zip, state.artId, {
+            title: state.bookTitle, author: state.bookAuthor,
+            annotation: bookInfo.annotation, genres: bookInfo.genres,
+            publisher: bookInfo.publisher, publicationDate: bookInfo.publicationDate,
+            isbn: bookInfo.isbn, rating: bookInfo.rating, url: bookInfo.url
+        });
+        if(packed.cover) addLog(`➕ cover.${packed.cover}`, 'db');
+        else logWarn('⚠️ Обложка не найдена');
+        if(packed.about) addLog('➕ about.html (аннотация + рецензии)', 'db');
+
+        // 📋 book_info.txt — карточка книги со всеми полями
+        zip.file('book_info.txt',
+            `Название: ${state.bookTitle}\n` +
+            `Автор: ${state.bookAuthor}\n` +
+            `Жанры: ${bookInfo.genres?.join(', ') || '—'}\n` +
+            `artId: ${state.artId}\n` +
+            `fileId: ${state.fileId}\n` +
+            `Формат: ${formatInfo.name}${isAudio ? ' (аудио)' : ''}\n` +
+            `Файл: ${mediaName}\n` +
+            `Размер медиа: ${(blob.size/1048576).toFixed(2)} MB\n` +
+            `Цена: ${bookInfo.price ? formatPrice(bookInfo.price) : '—'}\n` +
+            `Обложка: ${packed.cover ? 'cover.'+packed.cover : 'нет'}\n` +
+            `Рецензий: ${packed.about ? 'да (about.html)' : 'нет'}\n` +
+            `Дата: ${new Date().toLocaleString('ru-RU')}\n` +
+            `Скачано через LitRes Downloader v88.0`
+        );
+        addLog('➕ book_info.txt', 'db');
+
+        // --- Генерация ZIP ---
+        addLog(`🗜️ Генерируем ZIP (DEFLATE level 1 для метаданных)...`, 'step');
+        const zb = await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 1 }   // level 1: метаданные сожмутся быстро, аудио не тронет
+        });
+
+        // --- Отправка: Яндекс.Диск / локально ---
+        await triggerDownload(zb, zipName);
+
+        // --- Обновление UI ---
+        zipInfo.textContent = `✅ ${zipName} (${(zb.size/1048576).toFixed(2)} MB)`;
         zipInfo.style.color = '#4a8af4';
-        showResult(`${formatInfo.icon} ${formatInfo.name}`, fn, blob.size);
+
+        const extras = [];
+        if(packed.cover) extras.push('cover.'+packed.cover);
+        if(packed.about) extras.push('about.html');
+        extras.push('book_info.txt');
+
+        if(isAudio) logAudio(`🎧 ${mediaName} → ${zipName} (${(zb.size/1048576).toFixed(2)} MB) · внутри: ${extras.join(', ')}`);
+        else addLog(`🎬 ${mediaName} → ${zipName} (${(zb.size/1048576).toFixed(2)} MB) · внутри: ${extras.join(', ')}`, 'ok');
+
+        showResult(`${formatInfo.icon} ${formatInfo.name} + метаданные`, zipName, zb.size);
     }
+    catch(e){
+        // --- Fallback: если ZIP не собрался — качаем медиа напрямую ---
+        logWarn(`⚠️ ZIP не удался (${e.message}) → прямое скачивание`);
+        try{ Sound.warn(); }catch(e2){}
+        await triggerDownload(blob, mediaName);
+        const sz = (blob.size/1048576).toFixed(2);
+        if(isAudio) logAudio(`🎧 Аудио → ${mediaName} (${sz} MB)`);
+        else addLog(`🎵 ${mediaName} (${sz} MB)`, 'ok');
+        zipInfo.style.display = 'inline';
+        zipInfo.textContent = `✅ ${mediaName} (${sz} MB)`;
+        zipInfo.style.color = '#4a8af4';
+        showResult(`${formatInfo.icon} ${formatInfo.name}`, mediaName, blob.size);
+    }
+}
+// ============================================================
+// КОНЕЦ ФУНКЦИИ saveMultimedia (16.09.2026)
+// ============================================================
 
     async function startSmart(){
         if(!state.isReady) return;
