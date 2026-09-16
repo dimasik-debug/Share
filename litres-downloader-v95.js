@@ -1,5 +1,5 @@
 /**
- * LitRes Downloader v89.0 — YANDEX.DISK + GENRE FOLDERS
+ * LitRes Downloader v95.0 — YANDEX.DISK + GENRE FOLDERS
  * 🎵 Аудио: MP3, M4B, M4A, FLAC, OGG, WAV (с прогрессом) + суффикс _audio
  * 🎬 Видео: MP4, WEBM, MKV
  * 📚 Книги: ZIP, PDF, FB2, EPUB, TXT, MOBI
@@ -14,7 +14,7 @@
  */
 
 (function fullDownloaderV86() {
-    console.log('%c🚀 LitRes Downloader v92.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
+    console.log('%c🚀 LitRes Downloader v95.0', 'color:#4a8af4;font-size:16px;font-weight:bold;');
     console.log('%c☁️ Яндекс.Диск + 🏷️ Жанровые папки + 🎧 _audio+packMetaIntoZip', 'color:#fc3f1d;font-size:14px;font-weight:bold;');
     document.getElementById('litres_downloader_ui')?.remove();
     document.getElementById('litres_mini')?.remove();
@@ -188,14 +188,14 @@
         },
 
                 // ============================================================
-        // МЕТОД: YaDisk.uploadFile (ОБНОВЛЕННЫЙ v93)
+        // МЕТОД: YaDisk.uploadFile (ОБНОВЛЕННЫЙ v96 — двухфазный stall)
         // ДАТА: 16.09.2026
-        // ОПИСАНИЕ: Загрузка файла на Яндекс.Диск с прогрессом.
-        //           ГЛАВНОЕ ОТЛИЧИЕ ОТ СТАРОЙ ВЕРСИИ:
-        //           вместо общего xhr.timeout=600000 (10 минут) — stall-детекция.
-        //           Падаем только если 180 секунд НЕТ ПРОГРЕССА.
-        //           Пока байты льются — загрузка может идти хоть час.
-        //           Это критично для больших аудиокниг (500+ MB) на медленном канале.
+        // ОПИСАНИЕ: Загрузка с прогрессом. ДВЕ ФАЗЫ:
+        //   1) ПОКА ИДЁТ UPLOAD: stall 180 сек — если байты не льются, abort
+        //   2) ПОСЛЕ 100% UPLOAD: response-wait 600 сек — ждём ответа сервера
+        //      (Yandex обрабатывает большие файлы 30-120 сек, это норм)
+        // ИСПРАВЛЕНО: раньше armStall() срабатывал на 100% и убивал XHR
+        //             до получения финального 201 от сервера.
         // ============================================================
         async uploadFile(filename, blob, onProgress){
             if(!this.token) throw new Error('нет токена');
@@ -216,31 +216,60 @@
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open('PUT', href, true);
-                xhr.timeout = 0; // ⚡ Без общего таймаута — считаем по stall-детекции
+                xhr.timeout = 0;
 
-                // --- Stall-детекция: 180 сек без прогресса → abort ---
-                const STALL_MS = 180000;
-                let stallTimer = null;
-                let stallCount = 0;
+                // Двухфазные таймауты:
+                const STALL_MS = 180000;            // фаза 1: 180 сек без байт при заливке
+                const RESPONSE_WAIT_MS = 600000;    // фаза 2: 10 мин на ответ сервера после 100%
+                let timer = null;
+                let uploadComplete = false;
+                let stallFired = 0;
+
+                const clearTimer = () => { if(timer){ clearTimeout(timer); timer = null; } };
+
+                // Фаза 1: arm stall только пока идёт заливка
                 const armStall = () => {
-                    if(stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(() => {
-                        stallCount++;
-                        console.warn(`☁️ stall ${STALL_MS/1000}s без прогресса (раз ${stallCount}), abort`);
+                    if(uploadComplete) return; // ⚡ после 100% не перезаводим stall
+                    clearTimer();
+                    timer = setTimeout(() => {
+                        stallFired++;
+                        console.warn(`☁️ stall ${STALL_MS/1000}s без прогресса, abort`);
                         addLog(`☁️ Нет прогресса ${STALL_MS/1000}s → прерываем`, 'warn');
                         try{ xhr.abort(); }catch(e){}
                     }, STALL_MS);
                 };
-                const disarmStall = () => { if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; } };
-                armStall(); // Заводим сразу после открытия
+
+                // Фаза 2: после 100% upload ждём ответ сервера (не stall, а response-wait)
+                const armResponseWait = () => {
+                    clearTimer();
+                    console.log(`☁️ upload 100% → ждём ответ сервера (лимит ${RESPONSE_WAIT_MS/1000}s)`);
+                    addLog(`☁️ 100% → ждём ответ сервера...`, 'cloud');
+                    timer = setTimeout(() => {
+                        console.warn(`☁️ сервер не ответил за ${RESPONSE_WAIT_MS/1000}s, abort`);
+                        addLog(`☁️ Сервер не ответил за ${RESPONSE_WAIT_MS/1000}s → прерываем`, 'warn');
+                        try{ xhr.abort(); }catch(e){}
+                    }, RESPONSE_WAIT_MS);
+                };
+
+                armStall(); // заводим сразу
 
                 xhr.upload.onprogress = (e) => {
-                    armStall(); // ⚡ Прогресс есть → сбрасываем stall-таймер
                     const total = (e.lengthComputable && e.total > 0) ? e.total : totalSize;
                     const loaded = e.loaded || lastLoaded;
                     if(total <= 0) return;
                     lastLoaded = loaded;
                     const pct = (loaded / total) * 100;
+
+                    // ⚡ Переключаем фазы на 100%
+                    if(pct >= 100){
+                        if(!uploadComplete){
+                            uploadComplete = true;
+                            armResponseWait(); // фаза 2: больше не stall, а ждём ответ
+                        }
+                    } else {
+                        armStall(); // фаза 1: заливка идёт, байты льются — сбрасываем stall
+                    }
+
                     const now = performance.now();
                     const elapsed = (now - startTime) / 1000;
                     const speed = elapsed > 0.3 ? (loaded / 1048576 / elapsed) : 0;
@@ -249,19 +278,29 @@
                     if(pct - lastLogPct >= 10 || pct >= 100){ lastLogPct = Math.floor(pct/10)*10; addLog(`☁️ ${Math.round(pct)}% · ${fmtBytes(loaded)}/${fmtBytes(total)} · ${fmtSpeed(speed)}${eta>0?` · ETA ${fmtEta(eta)}`:''}`, 'cloud'); }
                 };
                 xhr.onload = async () => {
-                    disarmStall();
+                    clearTimer();
                     if(xhr.status >= 200 && xhr.status < 300){
-                        console.log(`☁️ uploadFile OK: ${filename} (${fmtBytes(totalSize)})`);
+                        console.log(`☁️ uploadFile OK: ${filename} (${fmtBytes(totalSize)}) за ${((performance.now()-startTime)/1000).toFixed(1)}s`);
                         let publicUrl = null;
                         if(this.publish){
                             try{ const pr = await this.request(`/resources/publish?path=${path}`, { method:'PUT' }); if(pr.ok){ const mr = await this.request(`/resources?path=${path}&fields=public_url`); if(mr.ok){ const m = await mr.json(); publicUrl = m.public_url; } } }catch(e){}
                         }
                         resolve({ ok:true, path: fullPath, folder: targetFolder, publicUrl });
-                    } else reject(new Error(`PUT failed: HTTP ${xhr.status}`));
+                    } else {
+                        console.error(`☁️ uploadFile HTTP ${xhr.status}`);
+                        reject(new Error(`PUT failed: HTTP ${xhr.status}`));
+                    }
                 };
-                xhr.onerror = () => { disarmStall(); console.error('☁️ uploadFile network error'); reject(new Error('XHR network error')); };
-                xhr.ontimeout = () => { disarmStall(); console.error('☁️ uploadFile timeout'); reject(new Error('XHR timeout')); };
-                xhr.onabort = () => { disarmStall(); console.error('☁️ uploadFile aborted (stall)'); reject(new Error(`stall > ${STALL_MS/1000}s без прогресса`)); };
+                xhr.onerror = () => { clearTimer(); console.error('☁️ uploadFile network error'); reject(new Error('XHR network error')); };
+                xhr.ontimeout = () => { clearTimer(); console.error('☁️ uploadFile timeout'); reject(new Error('XHR timeout')); };
+                xhr.onabort = () => {
+                    clearTimer();
+                    const reason = uploadComplete
+                        ? `сервер не ответил за ${RESPONSE_WAIT_MS/1000}s`
+                        : `stall > ${STALL_MS/1000}s без прогресса`;
+                    console.error('☁️ uploadFile aborted: ' + reason);
+                    reject(new Error(reason));
+                };
                 xhr.send(blob);
             });
         },
@@ -750,7 +789,7 @@
         const fid = state.fileId || bookInfo.fileId;
         if(!fid){ addLog('❌ Диагностика: нет fileId', 'err'); return null; }
         console.log('%c═══════════════════════════════════', 'color:#4a8af4');
-        console.log('%c🔬 ДИАГНОСТИКА v86.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
+        console.log('%c🔬 ДИАГНОСТИКА v95.0', 'color:#4a8af4;font-size:14px;font-weight:bold;');
         console.log('%c═══════════════════════════════════', 'color:#4a8af4');
         console.log(`📖 "${bookInfo.title}" · 🏷️ ${bookInfo.genres.join(', ')||'—'}`);
         console.log(`🆔 artId=${artId}, fileId=${fid}`);
@@ -861,7 +900,7 @@ img.litres-img{max-width:100%;height:auto;display:block;margin:24px auto;border-
 <h1 class="book-title">${st}</h1>
 <div class="meta">✍️ ${sa}</div>
 ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('\n')}
-<div class="footer">📚 LitRes Downloader v86.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
+<div class="footer">📚 LitRes Downloader v95.0<br>Глав: ${ch.length} · Картинок: ${totalImgs}</div>
 </body></html>`;
     }
 
@@ -1042,11 +1081,28 @@ ${revHtml}
                 zipInfo.style.color = '#2ecc71';
                 let extra = result.publicUrl ? `<div class="ldl-result-line">🔗 <a href="${result.publicUrl}" target="_blank" style="color:#4a8af4;">${result.publicUrl}</a></div>` : '';
                 $('result_text').innerHTML += `<div class="ldl-result-line" style="color:#2ecc71;font-weight:700;margin-top:6px;">☁️ Загружено на Яндекс.Диск</div><div class="ldl-result-line">📁 ${result.path}</div>${extra}`;
+            
+                    // ============================================================
+            // ЗАМЕНА: фоллбэк на локальное сохранение при падении Яндекс.Диска
+            // ДАТА: 16.09.2026
+            // ОПИСАНИЕ: если Диск упал (таймаут, stall, ошибка сервера) и локально
+            //           НЕ включено — принудительно сохраняем blob в «Загрузки»,
+            //           чтобы пользователь не остался без файла.
+            // ============================================================
             }catch(e){
                 addLog(`❌ Яндекс.Диск: ${e.message}`, 'err');
                 try{ Sound.error(); }catch(e2){}
+                if(!localOn){
+                    logWarn(`⚠️ Фоллбэк: сохраняем локально в «Загрузки»`);
+                    try{ Sound.local(); }catch(e3){}
+                    saveToBrowser(blob, filename);
+                    results.local = true;
+                }
             }
-        }
+            // ============================================================
+            // КОНЕЦ ЗАМЕНЫ (16.09.2026)
+            // ============================================================
+        
 
         const needLocal = localOn || !yadiskOn;
         if(needLocal){
