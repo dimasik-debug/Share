@@ -855,41 +855,76 @@ ${ch.map((h,i)=>`<!-- Глава ${String(i).padStart(3,'0')} -->\n${h}`).join('
     async function buildFb2FromChapters(chapters, imagesMap, meta){
         const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-        function htmlToFb2Sections(html){
-            const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
-            const root = doc.body.firstChild;
-            const out = [];
-            let buf = [], opened = false;
-            const flushP = () => { if(buf.length){ out.push(buf.join('\n')); buf = []; } };
-            for(const node of root.childNodes){
-                if(node.nodeType === 3){ if(node.textContent.trim()) buf.push(`<p>${esc(node.textContent.trim())}</p>`); continue; }
-                if(node.nodeType !== 1) continue;
-                const tag = node.tagName.toLowerCase();
-                if(tag === 'h2'){ flushP(); if(opened) out.push('</section>'); out.push(`<section><title><p>${esc(node.textContent)}</p></title>`); opened = true; }
-                else if(tag === 'h3'){ flushP(); out.push(`<subtitle>${esc(node.textContent)}</subtitle>`); }
-                else if(tag === 'p'){
-                    let s = '';
-                    for(const ch of node.childNodes){
-                        if(ch.nodeType === 3) s += esc(ch.textContent);
-                        else if(ch.tagName === 'EM' || ch.tagName === 'I') s += `<emphasis>${esc(ch.textContent)}</emphasis>`;
-                        else if(ch.tagName === 'STRONG' || ch.tagName === 'B') s += `<strong>${esc(ch.textContent)}</strong>`;
-                        else s += esc(ch.textContent);
-                    }
-                    buf.push(`<p>${s}</p>`);
-                }
-                else if(tag === 'img'){
-                    flushP();
-                    const name = (node.getAttribute('src')||'').replace(/^images\//,'').replace(/^\.\//,'');
-                    if(name) out.push(`<image l:href="#${esc(name)}"/>`);
-                }
-                else if(tag === 'br'){ buf.push('<empty-line/>'); }
-                else { const inner = htmlToFb2Sections(node.outerHTML); if(inner) out.push(inner); }
+function htmlToFb2Sections(html){
+    const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+    const root = doc.body.firstChild;
+    const out = [];
+    let buf = [], opened = false;
+    const flushP = () => { if(buf.length){ out.push(buf.join('\n')); buf = []; } };
+    // 🆕 Гарантирует, что мы ВНУТРИ секции, прежде чем добавить контент
+    const ensureOpen = () => { if(!opened){ out.push('<section>'); opened = true; } };
+    // 🆕 Нормализация имени картинки — то же что в extractImageNames
+    const cleanImgName = s => String(s||'').replace(/^\.\//, '').replace(/^.*\//, '').trim();
+
+    for(const node of root.childNodes){
+        if(node.nodeType === 3){
+            if(node.textContent.trim()){
+                ensureOpen();
+                buf.push(`<p>${esc(node.textContent.trim())}</p>`);
             }
+            continue;
+        }
+        if(node.nodeType !== 1) continue;
+        const tag = node.tagName.toLowerCase();
+
+        if(tag === 'h2'){
             flushP();
             if(opened) out.push('</section>');
-            if(!opened){ out.unshift('<section>'); out.push('</section>'); }
-            return out.join('\n');
+            out.push(`<section><title><p>${esc(node.textContent)}</p></title>`);
+            opened = true;
         }
+        else if(tag === 'h3'){
+            ensureOpen();
+            flushP();
+            out.push(`<subtitle>${esc(node.textContent)}</subtitle>`);
+        }
+        else if(tag === 'p'){
+            ensureOpen();
+            let s = '';
+            for(const ch of node.childNodes){
+                if(ch.nodeType === 3) s += esc(ch.textContent);
+                else if(ch.tagName === 'EM' || ch.tagName === 'I') s += `<emphasis>${esc(ch.textContent)}</emphasis>`;
+                else if(ch.tagName === 'STRONG' || ch.tagName === 'B') s += `<strong>${esc(ch.textContent)}</strong>`;
+                else if(ch.tagName === 'IMG'){
+                    // 🆕 IMG внутри параграфа — вытаскиваем отдельно
+                    const nm = cleanImgName(ch.getAttribute('src'));
+                    if(nm){ flushP(); out.push(`<p><image l:href="#${esc(nm)}"/></p>`); }
+                    continue;
+                }
+                else s += esc(ch.textContent);
+            }
+            if(s) buf.push(`<p>${s}</p>`);
+        }
+        else if(tag === 'img'){
+            ensureOpen();
+            flushP();
+            const name = cleanImgName(node.getAttribute('src'));
+            if(name) out.push(`<p><image l:href="#${esc(name)}"/></p>`);
+        }
+        else if(tag === 'br'){
+            ensureOpen();
+            buf.push('<empty-line/>');
+        }
+        else {
+            const inner = htmlToFb2Sections(node.outerHTML);
+            if(inner){ ensureOpen(); out.push(inner); }
+        }
+    }
+    flushP();
+    if(opened) out.push('</section>');
+    if(!opened){ out.unshift('<section>'); out.push('</section>'); }
+    return out.join('\n');
+}
 
         const sections = chapters.map(htmlToFb2Sections).join('\n');
         const binaries = [];
