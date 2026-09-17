@@ -843,9 +843,10 @@
         const forPrint = opts.forPrint || false;
         const imgPrefix = forPrint ? '' : 'images/';
         return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${st}</title>
+        // body{font-family:Georgia,'Times New Roman','PT Serif',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}
 <style>
 *{box-sizing:border-box;}
-body{font-family:Georgia,'Times New Roman','PT Serif',serif;font-size:18px;line-height:1.7;max-width:720px;margin:0 auto;padding:60px 30px;background:#fafafa;color:#222;}
+
 h1.book-title{font-size:32px;margin:0 0 10px;color:#1a2a4a;border-bottom:3px solid #1a5a9a;padding-bottom:15px;}
 h2{font-size:24px;margin:50px 0 20px;color:#1a2a4a;page-break-before:always;}
 h2:first-of-type{page-break-before:auto;}
