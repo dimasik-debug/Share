@@ -1,0 +1,14 @@
+{
+  "name": "Yandex Music Downloader v7.0",
+  "version": "6.0",
+  "matches": [
+    "https://music.yandex.ru/*",
+    "https://music.yandex.com/*",
+    "https://music.yandex.kz/*",
+    "https://music.yandex.by/*"
+  ],
+  "grants": [
+    "GM_xmlhttpRequest"
+  ],
+  "updatedAt": "2026-09-20T08:51:10.412Z"
+}
