@@ -1,0 +1,10 @@
+{
+  "name": "YM+MTS Interceptor v2.0",
+  "version": "2.0",
+  "matches": [
+    "https://music.yandex.ru/*",
+    "https://music.mts.ru/*"
+  ],
+  "grants": [],
+  "updatedAt": "2026-09-20T08:51:10.388Z"
+}
