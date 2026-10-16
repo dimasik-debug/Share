@@ -16,6 +16,31 @@
 // @run-at       document-idle
 // ==/UserScript==
 
+/* Converted by Neurosha · 2026-10-16T06:29:38.606Z */
+
+/* === GM-shim (Neurosha) === */
+(function(){
+  if(typeof unsafeWindow==='undefined') window.unsafeWindow=window;
+  if(typeof GM_info==='undefined') window.GM_info={script:{name:'converted',version:'1.0'},scriptHandler:'bookmarklet',version:'1.0'};
+  if(typeof GM_xmlhttpRequest==='undefined') window.GM_xmlhttpRequest=function(o){
+    var m=(o.method||'GET').toUpperCase(),h=o.headers||{},body=o.data;
+    fetch(o.url,{method:m,headers:h,body:body,credentials:'include'}).then(function(r){
+      return r.text().then(function(t){return{responseText:t,status:r.status,statusText:r.statusText,responseHeaders:'',finalUrl:r.url,r:r};});
+    }).then(function(resp){if(o.onload)try{o.onload(resp);}catch(e){}})
+     .catch(function(e){if(o.onerror)try{o.onerror(e);}catch(x){}});
+    return{abort:function(){}};
+  };
+  if(typeof GM_setValue==='undefined') window.GM_setValue=function(k,v){try{localStorage.setItem('__gmshim_'+k,JSON.stringify(v));}catch(e){}};
+  if(typeof GM_getValue==='undefined') window.GM_getValue=function(k,d){try{var s=localStorage.getItem('__gmshim_'+k);return s==null?d:JSON.parse(s);}catch(e){return d;}};
+  if(typeof GM_deleteValue==='undefined') window.GM_deleteValue=function(k){try{localStorage.removeItem('__gmshim_'+k);}catch(e){}};
+  if(typeof GM_listValues==='undefined') window.GM_listValues=function(){var r=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('__gmshim_')===0)r.push(k.slice(9));}return r;};
+  if(typeof GM_addStyle==='undefined') window.GM_addStyle=function(css){var s=document.createElement('style');s.textContent=css;(document.head||document.documentElement).appendChild(s);return s;};
+  if(typeof GM_openInTab==='undefined') window.GM_openInTab=function(u){return window.open(u,'_blank');};
+  if(typeof GM_setClipboard==='undefined') window.GM_setClipboard=function(t){try{navigator.clipboard.writeText(t);}catch(e){}};
+  if(typeof GM_download==='undefined') window.GM_download=function(o){var url=typeof o==='string'?o:o.url;var name=(typeof o==='object'&&o.name)||'download';var a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},3000);};
+})();
+/* === /GM-shim === */
+
 /* Converted by Neurosha · 2026-09-22T16:37:10.677Z */
 
 /* === GM-shim (Neurosha) === */
